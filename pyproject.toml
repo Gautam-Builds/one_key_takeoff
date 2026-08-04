@@ -1,0 +1,24 @@
+[project]
+name = "one-key-takeoff"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "pydantic-settings>=2.14.2",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.52.1",
+]
+
+[project.scripts]
+one-key-takeoff = "one_key_takeoff:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.1",
+]
