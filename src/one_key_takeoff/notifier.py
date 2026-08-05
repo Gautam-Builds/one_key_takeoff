@@ -5,7 +5,7 @@ import httpx
 from .config import settings
 from .logger import get_logger
 
-logger = get_logger("notifier")
+logger = get_logger()
 
 
 class NotificationService(Protocol):

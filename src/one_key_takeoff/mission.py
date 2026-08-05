@@ -7,7 +7,7 @@ from .logger import get_logger
 from .notifier import NotificationService, default_notifier
 from .telemetry import DroneController
 
-logger = get_logger("mission")
+logger = get_logger()
 mission_lock = asyncio.Lock()
 
 

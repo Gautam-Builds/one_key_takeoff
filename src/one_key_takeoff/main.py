@@ -9,7 +9,7 @@ from .mission import execute_mission
 from .notifier import default_notifier
 from .schemas import WebhookPayload
 
-logger = get_logger("api")
+logger = get_logger()
 
 
 @asynccontextmanager
