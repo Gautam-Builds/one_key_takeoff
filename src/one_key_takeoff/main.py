@@ -6,7 +6,7 @@ from fastapi import BackgroundTasks, FastAPI
 from .config import settings
 from .logger import get_logger
 from .mission import execute_mission
-from .notifier import NotificationService, default_notifier
+from .notifier import default_notifier
 from .schemas import WebhookPayload
 
 logger = get_logger("api")
@@ -32,7 +32,7 @@ async def health_check():
 
 
 @app.post("/webhook/{event_type}")
-async def receive_webhook(event_type: str, payload: WebhookPayload, background_tasks: BackgroundTasks, notifier: NotificationService = default_notifier):
+async def receive_webhook(event_type: str, payload: WebhookPayload, background_tasks: BackgroundTasks):
     if event_type == "messages":
         for msg in payload.messages:
             if msg.from_me:
@@ -54,7 +54,7 @@ async def receive_webhook(event_type: str, payload: WebhookPayload, background_t
                 logger.info(f"Incoming Text from {sender}: {body}")
 
                 if body.lower() == "start":
-                    await notifier.send_notification(sender, "Welcome to Robothrize Systems. Please send a location pin to initiate a drone mission.")
+                    await default_notifier.send_notification(sender, "Welcome to Robothrize Systems. Please send a location pin to initiate a drone mission.")
 
     return {"status": "success"}
 

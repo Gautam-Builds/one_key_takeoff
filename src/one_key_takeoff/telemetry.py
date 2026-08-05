@@ -2,6 +2,7 @@ import time
 
 from geopy.distance import geodesic
 from pymavlink import mavutil
+from pymavlink.dialects.v20 import ardupilotmega as mavlink
 
 from .config import settings
 from .logger import get_logger
@@ -24,7 +25,7 @@ class DroneController:
         self.connection_string = connection_string or settings.drone_connection_string
         self.baudrate = baudrate or settings.drone_baudrate
         self.timeout = timeout or settings.drone_connection_timeout
-        self.master: mavutil.mavlink_connection | None = None
+        self.master: mavutil.mavfile | None = None
 
         self.connect()
 
@@ -49,7 +50,7 @@ class DroneController:
             logger.info("Closing MAVLink connection...")
             try:
                 self.master.close()
-            except Exception as e:
+            except (OSError, AttributeError) as e:
                 logger.warning(f"Error while closing connection: {e}")
             finally:
                 self.master = None
@@ -69,11 +70,11 @@ class DroneController:
             self.master.mav.request_data_stream_send(
                 self.master.target_system,
                 self.master.target_component,
-                mavutil.mavlink.MAV_DATA_STREAM_ALL,
+                mavlink.MAV_DATA_STREAM_ALL,
                 rate_hz,
                 1
             )
-        except Exception as e:
+        except (OSError, AttributeError) as e:
             logger.warning(f"Could not request data streams: {e}")
 
     def drain_messages(self, timeout: float = 0.1):
@@ -156,13 +157,17 @@ class DroneController:
             raise RuntimeError("Drone is not connected.")
 
         mode_mapping = self.master.mode_mapping()
+
+        if mode_mapping is None:
+            raise RuntimeError("Mode mapping is not available. Has a heartbeat been received?")
+
         if mode not in mode_mapping:
             raise ValueError(f"Unknown flight mode: {mode}. Available: {list(mode_mapping.keys())}")
 
         mode_id = mode_mapping[mode]
         self.master.mav.set_mode_send(
             self.master.target_system,
-            mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+            mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
             mode_id
         )
         logger.info(f"Flight mode command sent: {mode} (ID: {mode_id})")
@@ -192,7 +197,7 @@ class DroneController:
             if time.time() - last_arm_cmd_time > 2.0:
                 self.master.mav.command_long_send(
                     self.master.target_system, self.master.target_component,
-                    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                    mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
                     0, 1, 0, 0, 0, 0, 0, 0
                 )
                 last_arm_cmd_time = time.time()
@@ -216,7 +221,7 @@ class DroneController:
         logger.info(f"Sending takeoff command to target altitude {altitude}m...")
         self.master.mav.command_long_send(
             self.master.target_system, self.master.target_component,
-            mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            mavlink.MAV_CMD_NAV_TAKEOFF,
             0, 0, 0, 0, 0, 0, 0, altitude
         )
 
@@ -259,7 +264,7 @@ class DroneController:
                 logger.info(f"Re-sending Takeoff command to target altitude {target_alt}m...")
                 self.master.mav.command_long_send(
                     self.master.target_system, self.master.target_component,
-                    mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                    mavlink.MAV_CMD_NAV_TAKEOFF,
                     0, 0, 0, 0, 0, 0, 0, target_alt
                 )
                 last_takeoff_cmd_time = time.time()
@@ -274,7 +279,7 @@ class DroneController:
         logger.info(f"Navigating to coordinate target: ({lat}, {lon}) at {alt}m...")
         self.master.mav.set_position_target_global_int_send(
             0, self.master.target_system, self.master.target_component,
-            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+            mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
             POSITION_CONTROL_MASK,
             int(lat * 1e7), int(lon * 1e7), alt,
             0, 0, 0, 0, 0, 0, 0, 0

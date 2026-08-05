@@ -43,7 +43,7 @@ def setup_logging(prefix: str = "one_key_takeoff") -> logging.Logger:
         logger.addHandler(file_handler)
         
         logger.info(f"Logging initialized. Log file: {_log_file_path}")
-    except Exception as e:
+    except OSError as e:
         logger.warning(f"Could not create file log handler in '{settings.log_dir}': {e}")
 
     return logger

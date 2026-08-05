@@ -64,13 +64,18 @@ async def execute_mission(
             # 6. Command navigation and Closed-loop Waypoint Reach Verification
             logger.info(f"Flying to target ({target_lat}, {target_lon})...")
             await asyncio.to_thread(drone.fly_to, target_lat, target_lon, takeoff_alt)
+
+            # Calculate dynamic navigation timeout based on distance (min 5 m/s speed + 60s buffer)
+            nav_timeout = max(60.0, (distance / 5.0) + 60.0)
+            logger.info(f"Monitoring navigation to target (Timeout: {nav_timeout:.1f}s for {distance:.1f}m)...")
+
             final_dist = await asyncio.to_thread(
                 drone.wait_until_reached_location,
                 target_lat,
                 target_lon,
                 takeoff_alt,
-                2.5,
-                60.0
+                3.0,
+                nav_timeout
             )
 
             # 7. Target Hover (5s intentional hover)
@@ -82,20 +87,20 @@ async def execute_mission(
             await asyncio.to_thread(drone.rtl)
             await notifier.send_notification(chat_id, "🏠 Mission complete. Returning to launch position.")
 
-        except Exception as e:
+        except Exception:
             logger.exception("Mission failed unexpectedly")
-            await notifier.send_notification(chat_id, f"🚨 Mission Error: {e}. Triggering fail-safe procedure.")
+            await notifier.send_notification(chat_id, "🚨 Mission Error: Triggering fail-safe procedure.")
 
             # Emergency Fallback Ladder: RTL -> LAND
             if drone and drone.master:
                 try:
                     logger.warning("Attempting fail-safe RTL command...")
                     await asyncio.to_thread(drone.rtl)
-                except Exception as rtl_err:
+                except Exception as rtl_err: # noqa: BLE001
                     logger.error(f"Failed to issue fail-safe RTL: {rtl_err}. Triggering LAND mode...")
                     try:
                         await asyncio.to_thread(drone.land)
-                    except Exception as land_err:
+                    except Exception as land_err: # noqa: BLE001
                         logger.critical(f"Critical Fail-safe failure: {land_err}")
 
         finally:

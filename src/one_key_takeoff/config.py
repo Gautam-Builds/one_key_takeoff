@@ -8,8 +8,6 @@ class Settings(BaseSettings):
     port: int = 8000
     
     # WhatsApp / Webhook Settings
-    whatsapp_verify_token: str = ""
-    whatsapp_api_key: str = ""
     whapi_token: str = ""
 
     # Drone Connection Settings
@@ -19,10 +17,10 @@ class Settings(BaseSettings):
     drone_arm_timeout: int = 30
 
     # Flight & Safety Boundaries
-    home_lat: float = 9.9816
-    home_lon: float = 76.2999
-    max_geofence_meters: float = 20000.0
-    takeoff_altitude_meters: float = 15.0
+    home_lat: float = 10.010624
+    home_lon: float = 76.3133952
+    max_geofence_meters: float = 2000.0
+    takeoff_altitude_meters: float = 20.0
 
     # Logging Settings
     log_level: str = "INFO"
