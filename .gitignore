@@ -4,3 +4,7 @@
 .venv/
 __pycache__/
 *.pyc
+
+logs/
+
+deploy.sh
