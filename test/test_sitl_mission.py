@@ -19,7 +19,9 @@ async def test_sitl_mission_execution():
     target_lat = home_lat + 0.0009
     target_lon = home_lon
 
-    logger.info(f"Executing closed-loop autonomous mission test on SITL ({conn_str})...")
+    logger.info(
+        f"Executing closed-loop autonomous mission test on SITL ({conn_str})..."
+    )
     await execute_mission("test_chat_123", target_lat, target_lon)
     logger.info("SUCCESS: Closed-loop SITL mission completed cleanly!")
 

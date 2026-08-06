@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     host: str = "0.0.0.0"
     port: int = 8000
-    
+
     # WhatsApp / Webhook Settings
     whapi_token: str = ""
 
@@ -27,7 +27,10 @@ class Settings(BaseSettings):
     log_dir: str = "logs"
 
     # Pydantic Settings Config
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
 
 # Global settings instance
 settings = Settings()

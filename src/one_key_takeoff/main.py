@@ -14,7 +14,9 @@ logger = get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"Starting One Key Takeoff API in {settings.app_env} mode (Host: {settings.host}:{settings.port}).")
+    logger.info(
+        f"Starting One Key Takeoff API in {settings.app_env} mode (Host: {settings.host}:{settings.port})."
+    )
     yield
     logger.info("Shutting down API server.")
 
@@ -27,13 +29,18 @@ async def health_check():
     return {
         "status": "ok",
         "environment": settings.app_env,
-        "drone_connection": settings.drone_connection_string
+        "drone_connection": settings.drone_connection_string,
     }
 
 
+@app.post("/webhook")
 @app.post("/webhook/{event_type}")
-async def receive_webhook(event_type: str, payload: WebhookPayload, background_tasks: BackgroundTasks):
-    if event_type == "messages":
+async def receive_webhook(
+    payload: WebhookPayload,
+    background_tasks: BackgroundTasks,
+    event_type: str | None = "messages",
+):
+    if event_type == "messages" or event_type is None:
         for msg in payload.messages:
             if msg.from_me:
                 continue
@@ -43,7 +50,9 @@ async def receive_webhook(event_type: str, payload: WebhookPayload, background_t
             if msg.location is not None:
                 lat = msg.location.latitude
                 lon = msg.location.longitude
-                logger.info(f"Incoming Location Pin from {sender}: lat={lat}, lon={lon}")
+                logger.info(
+                    f"Incoming Location Pin from {sender}: lat={lat}, lon={lon}"
+                )
 
                 # Dispatch background mission task
                 background_tasks.add_task(execute_mission, sender, lat, lon)
@@ -54,11 +63,16 @@ async def receive_webhook(event_type: str, payload: WebhookPayload, background_t
                 logger.info(f"Incoming Text from {sender}: {body}")
 
                 if body.lower() == "start":
-                    await default_notifier.send_notification(sender, "Welcome to Robothrize Systems. Please send a location pin to initiate a drone mission.")
+                    await default_notifier.send_notification(
+                        sender,
+                        "Welcome to Robothrize Systems. Please send a location pin to initiate a drone mission.",
+                    )
 
     return {"status": "success"}
 
 
 def start():
     """CLI entrypoint for starting the uvicorn server."""
-    uvicorn.run("one_key_takeoff.main:app", host=settings.host, port=settings.port, reload=True)
+    uvicorn.run(
+        "one_key_takeoff.main:app", host=settings.host, port=settings.port, reload=True
+    )

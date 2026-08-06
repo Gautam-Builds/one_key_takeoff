@@ -20,7 +20,7 @@ class DroneController:
         self,
         connection_string: str | None = None,
         baudrate: int | None = None,
-        timeout: int | None = None
+        timeout: int | None = None,
     ):
         self.connection_string = connection_string or settings.drone_connection_string
         self.baudrate = baudrate or settings.drone_baudrate
@@ -31,13 +31,21 @@ class DroneController:
 
     def connect(self):
         """Establishes MAVLink connection and waits for heartbeat within timeout."""
-        logger.info(f"Connecting to flight controller at {self.connection_string} (baud: {self.baudrate})...")
+        logger.info(
+            f"Connecting to flight controller at {self.connection_string} (baud: {self.baudrate})..."
+        )
         try:
-            self.master = mavutil.mavlink_connection(self.connection_string, baud=self.baudrate)
+            self.master = mavutil.mavlink_connection(
+                self.connection_string, baud=self.baudrate
+            )
             hb = self.master.wait_heartbeat(timeout=self.timeout)
             if not hb:
-                raise TimeoutError(f"No heartbeat received from drone within {self.timeout}s timeout.")
-            logger.info(f"Heartbeat received! Connected to System {self.master.target_system}, Component {self.master.target_component}")
+                raise TimeoutError(
+                    f"No heartbeat received from drone within {self.timeout}s timeout."
+                )
+            logger.info(
+                f"Heartbeat received! Connected to System {self.master.target_system}, Component {self.master.target_component}"
+            )
             self.request_data_streams(4)
         except Exception as e:
             logger.error(f"Failed to connect to drone at {self.connection_string}: {e}")
@@ -72,7 +80,7 @@ class DroneController:
                 self.master.target_component,
                 mavlink.MAV_DATA_STREAM_ALL,
                 rate_hz,
-                1
+                1,
             )
         except (OSError, AttributeError) as e:
             logger.warning(f"Could not request data streams: {e}")
@@ -83,10 +91,12 @@ class DroneController:
             return
         start = time.time()
         while time.time() - start < timeout:
-            msg = self.master.recv_match(type=['STATUSTEXT', 'SYS_STATUS'], blocking=False)
+            msg = self.master.recv_match(
+                type=["STATUSTEXT", "SYS_STATUS"], blocking=False
+            )
             if not msg:
                 break
-            if msg.get_type() == 'STATUSTEXT':
+            if msg.get_type() == "STATUSTEXT":
                 logger.info(f"Flight Controller Message: {msg.text}")
 
     def verify_prearm_checks(self, timeout: float = 5.0) -> bool:
@@ -99,23 +109,29 @@ class DroneController:
         gps_fix_ok = False
 
         while time.time() - start < timeout:
-            msg = self.master.recv_match(type=['GPS_RAW_INT', 'STATUSTEXT', 'SYS_STATUS'], blocking=True, timeout=1.0)
+            msg = self.master.recv_match(
+                type=["GPS_RAW_INT", "STATUSTEXT", "SYS_STATUS"],
+                blocking=True,
+                timeout=1.0,
+            )
             if not msg:
                 continue
 
             msg_type = msg.get_type()
-            if msg_type == 'STATUSTEXT':
+            if msg_type == "STATUSTEXT":
                 logger.info(f"Pre-arm StatusText: {msg.text}")
-            elif msg_type == 'GPS_RAW_INT':
-                fix_type = getattr(msg, 'fix_type', 0)
-                satellites = getattr(msg, 'satellites_visible', 0)
+            elif msg_type == "GPS_RAW_INT":
+                fix_type = getattr(msg, "fix_type", 0)
+                satellites = getattr(msg, "satellites_visible", 0)
                 logger.info(f"GPS Status: fix_type={fix_type}, satellites={satellites}")
                 if fix_type >= 3:
                     gps_fix_ok = True
                     break
 
         if not gps_fix_ok:
-            logger.warning("GPS 3D Fix not yet confirmed. Pre-arm check warning issued.")
+            logger.warning(
+                "GPS 3D Fix not yet confirmed. Pre-arm check warning issued."
+            )
         return gps_fix_ok
 
     def get_gps_location(self, timeout: float = 10.0) -> tuple[float, float]:
@@ -128,18 +144,20 @@ class DroneController:
 
         while time.time() - start_time < timeout:
             msg = self.master.recv_match(
-                type=['GLOBAL_POSITION_INT', 'GPS_RAW_INT', 'HOME_POSITION'],
+                type=["GLOBAL_POSITION_INT", "GPS_RAW_INT", "HOME_POSITION"],
                 blocking=True,
-                timeout=1.0
+                timeout=1.0,
             )
             if msg:
                 msg_type = msg.get_type()
-                lat_raw = getattr(msg, 'lat', getattr(msg, 'latitude', 0))
-                lon_raw = getattr(msg, 'lon', getattr(msg, 'longitude', 0))
+                lat_raw = getattr(msg, "lat", getattr(msg, "latitude", 0))
+                lon_raw = getattr(msg, "lon", getattr(msg, "longitude", 0))
                 if lat_raw != 0 or lon_raw != 0:
                     lat = lat_raw / 1e7
                     lon = lon_raw / 1e7
-                    logger.info(f"Retrieved GPS coordinates via {msg_type}: lat={lat:.7f}, lon={lon:.7f}")
+                    logger.info(
+                        f"Retrieved GPS coordinates via {msg_type}: lat={lat:.7f}, lon={lon:.7f}"
+                    )
                     return (lat, lon)
 
         if settings.home_lat is not None and settings.home_lon is not None:
@@ -149,7 +167,9 @@ class DroneController:
             )
             return (settings.home_lat, settings.home_lon)
 
-        raise TimeoutError(f"Could not obtain valid GPS coordinates from drone within {timeout}s.")
+        raise TimeoutError(
+            f"Could not obtain valid GPS coordinates from drone within {timeout}s."
+        )
 
     def set_mode(self, mode: str):
         """Sets flight mode (e.g. GUIDED, RTL, LAND)."""
@@ -159,16 +179,20 @@ class DroneController:
         mode_mapping = self.master.mode_mapping()
 
         if mode_mapping is None:
-            raise RuntimeError("Mode mapping is not available. Has a heartbeat been received?")
+            raise RuntimeError(
+                "Mode mapping is not available. Has a heartbeat been received?"
+            )
 
         if mode not in mode_mapping:
-            raise ValueError(f"Unknown flight mode: {mode}. Available: {list(mode_mapping.keys())}")
+            raise ValueError(
+                f"Unknown flight mode: {mode}. Available: {list(mode_mapping.keys())}"
+            )
 
         mode_id = mode_mapping[mode]
         self.master.mav.set_mode_send(
             self.master.target_system,
             mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-            mode_id
+            mode_id,
         )
         logger.info(f"Flight mode command sent: {mode} (ID: {mode_id})")
 
@@ -182,13 +206,19 @@ class DroneController:
         last_arm_cmd_time = 0.0
 
         while time.time() - start_time < timeout:
-            msg = self.master.recv_match(type=['HEARTBEAT', 'STATUSTEXT', 'COMMAND_ACK'], blocking=True, timeout=1.0)
+            msg = self.master.recv_match(
+                type=["HEARTBEAT", "STATUSTEXT", "COMMAND_ACK"],
+                blocking=True,
+                timeout=1.0,
+            )
             if msg:
                 msg_type = msg.get_type()
-                if msg_type == 'STATUSTEXT':
+                if msg_type == "STATUSTEXT":
                     logger.info(f"FC StatusText: {msg.text}")
-                elif msg_type == 'COMMAND_ACK':
-                    logger.info(f"Command ACK: command={msg.command}, result={msg.result}")
+                elif msg_type == "COMMAND_ACK":
+                    logger.info(
+                        f"Command ACK: command={msg.command}, result={msg.result}"
+                    )
 
             if self.master.motors_armed():
                 logger.info("Motors successfully ARMED!")
@@ -196,13 +226,23 @@ class DroneController:
 
             if time.time() - last_arm_cmd_time > 2.0:
                 self.master.mav.command_long_send(
-                    self.master.target_system, self.master.target_component,
+                    self.master.target_system,
+                    self.master.target_component,
                     mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-                    0, 1, 0, 0, 0, 0, 0, 0
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
                 )
                 last_arm_cmd_time = time.time()
 
-        raise TimeoutError(f"Arming timed out after {timeout} seconds. Check pre-arm messages / GPS lock.")
+        raise TimeoutError(
+            f"Arming timed out after {timeout} seconds. Check pre-arm messages / GPS lock."
+        )
 
     def arm_and_takeoff(self, altitude: float, timeout: int | None = None):
         """Runs pre-arm checks, arms motors, and commands takeoff."""
@@ -220,52 +260,80 @@ class DroneController:
 
         logger.info(f"Sending takeoff command to target altitude {altitude}m...")
         self.master.mav.command_long_send(
-            self.master.target_system, self.master.target_component,
+            self.master.target_system,
+            self.master.target_component,
             mavlink.MAV_CMD_NAV_TAKEOFF,
-            0, 0, 0, 0, 0, 0, 0, altitude
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            altitude,
         )
 
-    def wait_until_altitude(self, target_alt: float, tolerance: float = 0.5, timeout: float = 40.0) -> float:
+    def wait_until_altitude(
+        self, target_alt: float, tolerance: float = 0.5, timeout: float = 40.0
+    ) -> float:
         """Closed-loop verification waiting until drone climbs to target relative altitude."""
         if not self.master:
             raise RuntimeError("Drone is not connected.")
 
         self.request_data_streams(4)
-        logger.info(f"Monitoring takeoff climb to target altitude {target_alt}m (tolerance: +- {tolerance}m)...")
+        logger.info(
+            f"Monitoring takeoff climb to target altitude {target_alt}m (tolerance: +- {tolerance}m)..."
+        )
         start_time = time.time()
         last_takeoff_cmd_time = time.time()
 
         while time.time() - start_time < timeout:
-            msg = self.master.recv_match(type=['GLOBAL_POSITION_INT', 'VFR_HUD', 'STATUSTEXT', 'COMMAND_ACK'], blocking=True, timeout=1.0)
+            msg = self.master.recv_match(
+                type=["GLOBAL_POSITION_INT", "VFR_HUD", "STATUSTEXT", "COMMAND_ACK"],
+                blocking=True,
+                timeout=1.0,
+            )
             if not msg:
                 continue
 
             msg_type = msg.get_type()
-            if msg_type == 'STATUSTEXT':
+            if msg_type == "STATUSTEXT":
                 logger.info(f"FC StatusText: {msg.text}")
                 continue
-            elif msg_type == 'COMMAND_ACK':
+            elif msg_type == "COMMAND_ACK":
                 logger.info(f"Command ACK: cmd={msg.command}, result={msg.result}")
                 continue
 
             rel_alt = 0.0
-            if msg_type == 'GLOBAL_POSITION_INT':
+            if msg_type == "GLOBAL_POSITION_INT":
                 rel_alt = msg.relative_alt / 1000.0
-            elif msg_type == 'VFR_HUD':
-                rel_alt = getattr(msg, 'alt', 0.0)
+            elif msg_type == "VFR_HUD":
+                rel_alt = getattr(msg, "alt", 0.0)
 
-            logger.info(f"Climb Telemetry: Relative Alt = {rel_alt:.2f}m / Target = {target_alt}m")
+            logger.info(
+                f"Climb Telemetry: Relative Alt = {rel_alt:.2f}m / Target = {target_alt}m"
+            )
             if rel_alt >= (target_alt - tolerance):
                 logger.info(f"Target altitude reached! Current alt: {rel_alt:.2f}m")
                 return rel_alt
 
             # Re-send TAKEOFF command if vehicle hasn't started ascending after 4 seconds
             if rel_alt < 0.5 and (time.time() - last_takeoff_cmd_time > 4.0):
-                logger.info(f"Re-sending Takeoff command to target altitude {target_alt}m...")
+                logger.info(
+                    f"Re-sending Takeoff command to target altitude {target_alt}m..."
+                )
                 self.master.mav.command_long_send(
-                    self.master.target_system, self.master.target_component,
+                    self.master.target_system,
+                    self.master.target_component,
                     mavlink.MAV_CMD_NAV_TAKEOFF,
-                    0, 0, 0, 0, 0, 0, 0, target_alt
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    target_alt,
                 )
                 last_takeoff_cmd_time = time.time()
 
@@ -278,11 +346,22 @@ class DroneController:
 
         logger.info(f"Navigating to coordinate target: ({lat}, {lon}) at {alt}m...")
         self.master.mav.set_position_target_global_int_send(
-            0, self.master.target_system, self.master.target_component,
+            0,
+            self.master.target_system,
+            self.master.target_component,
             mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
             POSITION_CONTROL_MASK,
-            int(lat * 1e7), int(lon * 1e7), alt,
-            0, 0, 0, 0, 0, 0, 0, 0
+            int(lat * 1e7),
+            int(lon * 1e7),
+            alt,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
         )
 
     def wait_until_reached_location(
@@ -291,14 +370,16 @@ class DroneController:
         target_lon: float,
         alt: float,
         acceptance_radius: float = 2.5,
-        timeout: float = 60.0
+        timeout: float = 60.0,
     ) -> float:
         """Closed-loop monitoring until vehicle reaches within acceptance_radius of target coordinate."""
         if not self.master:
             raise RuntimeError("Drone is not connected.")
 
         target_pos = (target_lat, target_lon)
-        logger.info(f"Monitoring navigation to ({target_lat}, {target_lon}) within {acceptance_radius}m...")
+        logger.info(
+            f"Monitoring navigation to ({target_lat}, {target_lon}) within {acceptance_radius}m..."
+        )
         start_time = time.time()
         last_cmd_time = 0.0
 
@@ -307,11 +388,13 @@ class DroneController:
                 self.fly_to(target_lat, target_lon, alt)
                 last_cmd_time = time.time()
 
-            msg = self.master.recv_match(type=['GLOBAL_POSITION_INT', 'STATUSTEXT'], blocking=True, timeout=1.0)
+            msg = self.master.recv_match(
+                type=["GLOBAL_POSITION_INT", "STATUSTEXT"], blocking=True, timeout=1.0
+            )
             if not msg:
                 continue
 
-            if msg.get_type() == 'STATUSTEXT':
+            if msg.get_type() == "STATUSTEXT":
                 logger.info(f"FC StatusText: {msg.text}")
                 continue
 
@@ -320,7 +403,9 @@ class DroneController:
             current_pos = (current_lat, current_lon)
 
             dist = geodesic(current_pos, target_pos).meters
-            logger.info(f"Navigation Telemetry: Current Pos ({current_lat:.7f}, {current_lon:.7f}), Distance to Target = {dist:.1f}m")
+            logger.info(
+                f"Navigation Telemetry: Current Pos ({current_lat:.7f}, {current_lon:.7f}), Distance to Target = {dist:.1f}m"
+            )
 
             if dist <= acceptance_radius:
                 logger.info(f"Target position reached! Final distance: {dist:.1f}m")

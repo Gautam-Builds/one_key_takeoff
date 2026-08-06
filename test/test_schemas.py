@@ -9,10 +9,7 @@ def test_webhook_location_payload_parsing():
             {
                 "chat_id": "+1234567890",
                 "from_me": False,
-                "location": {
-                    "latitude": 9.9816,
-                    "longitude": 76.2999
-                }
+                "location": {"latitude": 9.9816, "longitude": 76.2999},
             }
         ]
     }

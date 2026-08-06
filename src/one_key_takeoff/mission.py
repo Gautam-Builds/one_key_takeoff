@@ -15,11 +15,14 @@ async def execute_mission(
     chat_id: str,
     target_lat: float,
     target_lon: float,
-    notifier: NotificationService = default_notifier
+    notifier: NotificationService = default_notifier,
 ):
     """Executes closed-loop mission sequence using telemetry verification."""
     if mission_lock.locked():
-        await notifier.send_notification(chat_id, "⚠️ Drone is currently executing another mission. Request queued/rejected.")
+        await notifier.send_notification(
+            chat_id,
+            "⚠️ Drone is currently executing another mission. Request queued/rejected.",
+        )
         return
 
     async with mission_lock:
@@ -44,22 +47,32 @@ async def execute_mission(
                 await notifier.send_notification(chat_id, msg)
                 return
 
-            logger.info(f"Starting mission for {chat_id}. Target: ({target_lat}, {target_lon}), Distance: {distance:.1f}m")
+            logger.info(
+                f"Starting mission for {chat_id}. Target: ({target_lat}, {target_lon}), Distance: {distance:.1f}m"
+            )
             await notifier.send_notification(
                 chat_id,
-                f"✅ Mission Accepted! Target is {distance:.1f}m away. Pre-flight checks initiated."
+                f"✅ Mission Accepted! Target is {distance:.1f}m away. Pre-flight checks initiated.",
             )
 
             # 4. Arm and initiate takeoff
             takeoff_alt = settings.takeoff_altitude_meters
             logger.info(f"Arming and initiating takeoff to {takeoff_alt}m...")
-            await notifier.send_notification(chat_id, f"🚁 Pre-arm checks passed. Arming motors and taking off to {takeoff_alt}m...")
+            await notifier.send_notification(
+                chat_id,
+                f"🚁 Pre-arm checks passed. Arming motors and taking off to {takeoff_alt}m...",
+            )
             await asyncio.to_thread(drone.arm_and_takeoff, takeoff_alt)
 
             # 5. Closed-loop Altitude Verification
             logger.info(f"Waiting for drone to reach target altitude {takeoff_alt}m...")
-            achieved_alt = await asyncio.to_thread(drone.wait_until_altitude, takeoff_alt, 0.5, 40.0)
-            await notifier.send_notification(chat_id, f"Altitude reached ({achieved_alt:.1f}m). Navigating to coordinates...")
+            achieved_alt = await asyncio.to_thread(
+                drone.wait_until_altitude, takeoff_alt, 0.5, 40.0
+            )
+            await notifier.send_notification(
+                chat_id,
+                f"Altitude reached ({achieved_alt:.1f}m). Navigating to coordinates...",
+            )
 
             # 6. Command navigation and Closed-loop Waypoint Reach Verification
             logger.info(f"Flying to target ({target_lat}, {target_lon})...")
@@ -67,7 +80,9 @@ async def execute_mission(
 
             # Calculate dynamic navigation timeout based on distance (min 5 m/s speed + 60s buffer)
             nav_timeout = max(60.0, (distance / 5.0) + 60.0)
-            logger.info(f"Monitoring navigation to target (Timeout: {nav_timeout:.1f}s for {distance:.1f}m)...")
+            logger.info(
+                f"Monitoring navigation to target (Timeout: {nav_timeout:.1f}s for {distance:.1f}m)..."
+            )
 
             final_dist = await asyncio.to_thread(
                 drone.wait_until_reached_location,
@@ -75,32 +90,41 @@ async def execute_mission(
                 target_lon,
                 takeoff_alt,
                 3.0,
-                nav_timeout
+                nav_timeout,
             )
 
             # 7. Target Hover (5s intentional hover)
-            await notifier.send_notification(chat_id, f"📍 Target reached (within {final_dist:.1f}m)! Hovering for 5 seconds...")
+            await notifier.send_notification(
+                chat_id,
+                f"📍 Target reached (within {final_dist:.1f}m)! Hovering for 5 seconds...",
+            )
             await asyncio.sleep(5.0)
 
             # 8. Return to Launch (RTL)
             logger.info("Executing Return to Launch (RTL)...")
             await asyncio.to_thread(drone.rtl)
-            await notifier.send_notification(chat_id, "🏠 Mission complete. Returning to launch position.")
+            await notifier.send_notification(
+                chat_id, "🏠 Mission complete. Returning to launch position."
+            )
 
         except Exception:
             logger.exception("Mission failed unexpectedly")
-            await notifier.send_notification(chat_id, "🚨 Mission Error: Triggering fail-safe procedure.")
+            await notifier.send_notification(
+                chat_id, "🚨 Mission Error: Triggering fail-safe procedure."
+            )
 
             # Emergency Fallback Ladder: RTL -> LAND
             if drone and drone.master:
                 try:
                     logger.warning("Attempting fail-safe RTL command...")
                     await asyncio.to_thread(drone.rtl)
-                except Exception as rtl_err: # noqa: BLE001
-                    logger.error(f"Failed to issue fail-safe RTL: {rtl_err}. Triggering LAND mode...")
+                except Exception as rtl_err:  # noqa: BLE001
+                    logger.error(
+                        f"Failed to issue fail-safe RTL: {rtl_err}. Triggering LAND mode..."
+                    )
                     try:
                         await asyncio.to_thread(drone.land)
-                    except Exception as land_err: # noqa: BLE001
+                    except Exception as land_err:  # noqa: BLE001
                         logger.critical(f"Critical Fail-safe failure: {land_err}")
 
         finally:

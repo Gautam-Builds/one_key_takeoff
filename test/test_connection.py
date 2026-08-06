@@ -11,7 +11,9 @@ logger = get_logger("test_connection")
 
 @pytest.mark.anyio
 async def test_drone_connection():
-    logger.info(f"Testing drone connection on {settings.drone_connection_string} (baud: {settings.drone_baudrate})...")
+    logger.info(
+        f"Testing drone connection on {settings.drone_connection_string} (baud: {settings.drone_baudrate})..."
+    )
     with DroneController() as drone:
         assert drone.master is not None
         logger.info(

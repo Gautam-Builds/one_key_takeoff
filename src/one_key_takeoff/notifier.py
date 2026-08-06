@@ -9,8 +9,7 @@ logger = get_logger()
 
 
 class NotificationService(Protocol):
-    async def send_notification(self, recipient: str, message: str) -> None:
-        ...
+    async def send_notification(self, recipient: str, message: str) -> None: ...
 
 
 class WhapiNotifier:
@@ -27,13 +26,9 @@ class WhapiNotifier:
         url = "https://panel.whapi.cloud/api/messages/text"
         headers = {
             "Authorization": f"Bearer {self.token.strip()}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
-        payload = {
-            "typing_time": 0,
-            "to": recipient,
-            "body": message
-        }
+        payload = {"typing_time": 0, "to": recipient, "body": message}
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -41,7 +36,9 @@ class WhapiNotifier:
                 if response.status_code in (200, 201):
                     logger.info(f"Notification sent to {recipient}: {message}")
                 else:
-                    logger.error(f"Failed to send notification to {recipient}. HTTP {response.status_code}: {response.text}")
+                    logger.error(
+                        f"Failed to send notification to {recipient}. HTTP {response.status_code}: {response.text}"
+                    )
         except Exception:
             logger.exception(f"HTTP error while sending notification to {recipient}")
 
