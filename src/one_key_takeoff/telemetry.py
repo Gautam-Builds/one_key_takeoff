@@ -1,5 +1,5 @@
 import time
-
+from typing import Any
 from geopy.distance import geodesic
 from pymavlink import mavutil
 from pymavlink.dialects.v20 import ardupilotmega as mavlink
@@ -25,7 +25,8 @@ class DroneController:
         self.connection_string = connection_string or settings.drone_connection_string
         self.baudrate = baudrate or settings.drone_baudrate
         self.timeout = timeout or settings.drone_connection_timeout
-        self.master: mavutil.mavfile | None = None
+        # self.master: mavutil.mavfile | None = None
+        self.master: Any = None
 
         self.connect()
 
@@ -38,8 +39,9 @@ class DroneController:
             self.master = mavutil.mavlink_connection(
                 self.connection_string, baud=self.baudrate
             )
-            hb = self.master.wait_heartbeat(timeout=self.timeout)
-            if not hb:
+            self.master.wait_heartbeat(timeout=self.timeout)
+            
+            if self.master.target_system == 0:  
                 raise TimeoutError(
                     f"No heartbeat received from drone within {self.timeout}s timeout."
                 )
@@ -307,8 +309,8 @@ class DroneController:
             rel_alt = 0.0
             if msg_type == "GLOBAL_POSITION_INT":
                 rel_alt = msg.relative_alt / 1000.0
-            elif msg_type == "VFR_HUD":
-                rel_alt = getattr(msg, "alt", 0.0)
+            # elif msg_type == "VFR_HUD":
+            #     rel_alt = getattr(msg, "alt", 0.0)
 
             logger.info(
                 f"Climb Telemetry: Relative Alt = {rel_alt:.2f}m / Target = {target_alt}m"

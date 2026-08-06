@@ -52,7 +52,7 @@ async def execute_mission(
             )
             await notifier.send_notification(
                 chat_id,
-                f"✅ Mission Accepted! Target is {distance:.1f}m away. Pre-flight checks initiated.",
+                f"✅ Mission Accepted! Target is {distance:.1f}m away. Finding nearest drone....",
             )
 
             # 4. Arm and initiate takeoff
@@ -60,7 +60,7 @@ async def execute_mission(
             logger.info(f"Arming and initiating takeoff to {takeoff_alt}m...")
             await notifier.send_notification(
                 chat_id,
-                f"🚁 Pre-arm checks passed. Arming motors and taking off to {takeoff_alt}m...",
+                f"🚁 Nearest drone acquired. Taking off ....",
             )
             await asyncio.to_thread(drone.arm_and_takeoff, takeoff_alt)
 
@@ -69,10 +69,10 @@ async def execute_mission(
             achieved_alt = await asyncio.to_thread(
                 drone.wait_until_altitude, takeoff_alt, 0.5, 40.0
             )
-            await notifier.send_notification(
-                chat_id,
-                f"Altitude reached ({achieved_alt:.1f}m). Navigating to coordinates...",
-            )
+            # await notifier.send_notification(
+            #     chat_id,
+            #     f"Altitude reached ({achieved_alt:.1f}m). Navigating to coordinates...",
+            # )
 
             # 6. Command navigation and Closed-loop Waypoint Reach Verification
             logger.info(f"Flying to target ({target_lat}, {target_lon})...")
