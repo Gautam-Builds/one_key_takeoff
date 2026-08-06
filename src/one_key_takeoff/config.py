@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     home_lon: float = 76.3133952
     max_geofence_meters: float = 2000.0
     takeoff_altitude_meters: float = 20.0
+    hover_time_seconds: int = 5
 
     # Logging Settings
     log_level: str = "INFO"

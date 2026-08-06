@@ -96,9 +96,9 @@ async def execute_mission(
             # 7. Target Hover (5s intentional hover)
             await notifier.send_notification(
                 chat_id,
-                f"📍 Target reached (within {final_dist:.1f}m)! Hovering for 5 seconds...",
+                f"📍 Target reached (within {final_dist:.1f}m)! Hovering for {settings.hover_time_seconds} seconds...",
             )
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(settings.hover_time_seconds)
 
             # 8. Return to Launch (RTL)
             logger.info("Executing Return to Launch (RTL)...")
