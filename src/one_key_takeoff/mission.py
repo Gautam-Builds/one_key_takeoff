@@ -60,7 +60,7 @@ async def execute_mission(
             logger.info(f"Arming and initiating takeoff to {takeoff_alt}m...")
             await notifier.send_notification(
                 chat_id,
-                f"🚁 Nearest drone acquired. Taking off ....",
+                "🚁 Nearest drone acquired. Taking off ....",
             )
             await asyncio.to_thread(drone.arm_and_takeoff, takeoff_alt)
 

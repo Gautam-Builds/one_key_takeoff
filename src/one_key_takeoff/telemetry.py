@@ -1,5 +1,6 @@
 import time
 from typing import Any
+
 from geopy.distance import geodesic
 from pymavlink import mavutil
 from pymavlink.dialects.v20 import ardupilotmega as mavlink
@@ -40,8 +41,8 @@ class DroneController:
                 self.connection_string, baud=self.baudrate
             )
             self.master.wait_heartbeat(timeout=self.timeout)
-            
-            if self.master.target_system == 0:  
+
+            if self.master.target_system == 0:
                 raise TimeoutError(
                     f"No heartbeat received from drone within {self.timeout}s timeout."
                 )
