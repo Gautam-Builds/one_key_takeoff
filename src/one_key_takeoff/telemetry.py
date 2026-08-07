@@ -32,30 +32,44 @@ class DroneController:
         self.connect()
 
     def connect(self):
-        """Establishes MAVLink connection and waits for heartbeat within timeout."""
-        logger.info(
-            f"Connecting to flight controller at {self.connection_string} (baud: {self.baudrate})..."
-        )
-        try:
-            self.master = mavutil.mavlink_connection(
-                self.connection_string, baud=self.baudrate, autoreconnect=True
-            )
-            # self.master.wait_heartbeat(timeout=self.timeout)
-            hb = self.master.wait_heartbeat(timeout=self.timeout)
+        """Establishes MAVLink connection with hard retries for flaky USB buses."""
+        retry_delay = 2.0  # Seconds to wait between hard retries
 
-            if hb is None or self.master.target_system == 0:
-                raise TimeoutError(
-                    f"No heartbeat received from drone within {self.timeout}s timeout."
+        for attempt in range(0, settings.connection_max_retries):
+            logger.info(f"Connecting to flight controller at {self.connection_string} (Attempt {attempt}/{settings.connection_max_retries})...")
+            
+            try:
+                self.master = mavutil.mavlink_connection(
+                    self.connection_string, 
+                    baud=self.baudrate,
+                    autoreconnect=True
                 )
-            logger.info(
-                f"Heartbeat received! Connected to System {self.master.target_system}, Component {self.master.target_component}"
-            )
-            self.request_data_streams(4)
-        except Exception as e:
-            self.check_prearm_messages()
-            logger.error(f"Failed to connect to drone at {self.connection_string}: {e}")
-            self.close()
-            raise
+                
+                # Wait for the first heartbeat
+                hb = self.master.wait_heartbeat(timeout=self.timeout)
+
+                if hb is None or self.master.target_system == 0:
+                    raise TimeoutError("Heartbeat timeout.")
+                    
+                logger.info(f"✅ Heartbeat received! Connected to System {self.master.target_system}, Component {self.master.target_component}")
+                
+                # Connection successful, request data and exit the retry loop
+                self.request_data_streams(4)
+                return  
+                
+            except Exception as e:
+                logger.warning(f"Connection attempt {attempt} failed: {e}")
+                
+                # Ensure the broken serial port is closed before trying again
+                if self.master:
+                    self.master.close()
+                    
+                if attempt < settings.connection_max_retries:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"❌ Failed to connect to drone after {settings.connection_max_retries} attempts.")
+                    raise # Pass the error up so the mission aborts cleanly
 
     def close(self):
         """Closes the MAVLink connection cleanly."""

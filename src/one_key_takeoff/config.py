@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     max_geofence_meters: float = 2000.0
     takeoff_altitude_meters: float = 20.0
     hover_time_seconds: int = 5
+    connection_max_retries: int = 5
 
     # Logging Settings
     log_level: str = "INFO"
