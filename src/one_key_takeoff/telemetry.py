@@ -38,7 +38,7 @@ class DroneController:
         )
         try:
             self.master = mavutil.mavlink_connection(
-                self.connection_string, baud=self.baudrate
+                self.connection_string, baud=self.baudrate, autoreconnect=True
             )
             # self.master.wait_heartbeat(timeout=self.timeout)
             hb = self.master.wait_heartbeat(timeout=self.timeout)
@@ -52,6 +52,7 @@ class DroneController:
             )
             self.request_data_streams(4)
         except Exception as e:
+            self.check_prearm_messages()
             logger.error(f"Failed to connect to drone at {self.connection_string}: {e}")
             self.close()
             raise
@@ -103,12 +104,32 @@ class DroneController:
             if msg.get_type() == "STATUSTEXT":
                 logger.info(f"Flight Controller Message: {msg.text}")
 
+    def check_prearm_messages(self):
+        """Fetches and logs any pending STATUSTEXT messages from ArduPilot."""
+        if not self.master:
+            return
+        logger.info("Checking ArduPilot status messages...")
+        while True:
+            # blocking=False ensures it doesn't freeze your script if the queue is empty
+            msg = self.master.recv_match(type="STATUSTEXT", blocking=False)
+            if not msg:
+                break  # Queue is empty
+
+            # Clean up the text (pymavlink sometimes returns bytes instead of strings)
+            text = msg.text
+            if isinstance(text, bytes):
+                text = text.decode("utf-8", errors="ignore")
+
+            # Log it as a WARNING so it stands out in your terminal
+            logger.warning(f"🚁 ArduPilot: {text}")
+
     def verify_prearm_checks(self, timeout: float = 5.0) -> bool:
         """Verifies GPS lock (3D Fix) and monitors STATUSTEXT for pre-arm errors."""
         if not self.master:
             return False
 
         logger.info("Running pre-arm checks (GPS lock, System status)...")
+        self.check_prearm_messages()
         start = time.time()
         gps_fix_ok = False
 
@@ -123,7 +144,10 @@ class DroneController:
 
             msg_type = msg.get_type()
             if msg_type == "STATUSTEXT":
-                logger.info(f"Pre-arm StatusText: {msg.text}")
+                text = msg.text
+                if isinstance(text, bytes):
+                    text = text.decode("utf-8", errors="ignore")
+                logger.warning(f"🚁 ArduPilot: {text}")
             elif msg_type == "GPS_RAW_INT":
                 fix_type = getattr(msg, "fix_type", 0)
                 satellites = getattr(msg, "satellites_visible", 0)
@@ -257,10 +281,12 @@ class DroneController:
 
         self.verify_prearm_checks(timeout=3.0)
 
-        self.set_mode("GUIDED")
-        time.sleep(1.0)
+        self.set_mode("LOITER")
+        time.sleep(1.5)
 
         self.wait_until_armed(timeout=arm_timeout)
+        self.set_mode("GUIDED")
+        time.sleep(0.5)
 
         logger.info(f"Sending takeoff command to target altitude {altitude}m...")
         self.master.mav.command_long_send(

@@ -38,6 +38,7 @@ async def execute_mission(
 
             # 3. Dynamic Geofence check
             distance = geodesic(initial_pos, target_pos).meters
+            
             if distance > settings.max_geofence_meters:
                 msg = (
                     f"❌ Target is {distance:.1f}m away. "
@@ -69,6 +70,7 @@ async def execute_mission(
             achieved_alt = await asyncio.to_thread(
                 drone.wait_until_altitude, takeoff_alt, 0.5, 40.0
             )
+            logger.info(f"Altitude reached: {achieved_alt:.1f}m")
             # await notifier.send_notification(
             #     chat_id,
             #     f"Altitude reached ({achieved_alt:.1f}m). Navigating to coordinates...",
