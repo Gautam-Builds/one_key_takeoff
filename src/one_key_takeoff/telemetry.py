@@ -1,7 +1,7 @@
 import time
 from typing import Any
-import serial
 
+import serial
 from geopy.distance import geodesic
 from pymavlink import mavutil
 from pymavlink.dialects.v20 import ardupilotmega as mavlink
@@ -36,41 +36,45 @@ class DroneController:
         """Establishes MAVLink connection with hard retries for flaky USB buses."""
         retry_delay = 2.0  # Seconds to wait between hard retries
 
-        for attempt in range(0, settings.connection_max_retries):
-            logger.info(f"Connecting to flight controller at {self.connection_string} (Attempt {attempt}/{settings.connection_max_retries})...")
-            
+        for attempt in range(settings.connection_max_retries):
+            logger.info(
+                f"Connecting to flight controller at {self.connection_string} (Attempt {attempt}/{settings.connection_max_retries})..."
+            )
+
             try:
                 self.master = mavutil.mavlink_connection(
-                    self.connection_string, 
-                    baud=self.baudrate,
-                    autoreconnect=True
+                    self.connection_string, baud=self.baudrate, autoreconnect=True
                 )
-                
+
                 # Wait for the first heartbeat
                 hb = self.master.wait_heartbeat(timeout=self.timeout)
 
                 if hb is None or self.master.target_system == 0:
                     raise TimeoutError("Heartbeat timeout.")
-                    
-                logger.info(f"✅ Heartbeat received! Connected to System {self.master.target_system}, Component {self.master.target_component}")
-                
+
+                logger.info(
+                    f"✅ Heartbeat received! Connected to System {self.master.target_system}, Component {self.master.target_component}"
+                )
+
                 # Connection successful, request data and exit the retry loop
                 self.request_data_streams(4)
-                return  
-                
+                return
+
             except Exception as e:
                 logger.warning(f"Connection attempt {attempt} failed: {e}")
-                
+
                 # Ensure the broken serial port is closed before trying again
                 if self.master:
                     self.master.close()
-                    
+
                 if attempt < settings.connection_max_retries:
                     logger.info(f"Retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                 else:
-                    logger.error(f"❌ Failed to connect to drone after {settings.connection_max_retries} attempts.")
-                    raise # Pass the error up so the mission aborts cleanly
+                    logger.error(
+                        f"❌ Failed to connect to drone after {settings.connection_max_retries} attempts."
+                    )
+                    raise  # Pass the error up so the mission aborts cleanly
 
     def close(self):
         """Closes the MAVLink connection cleanly."""
@@ -179,7 +183,7 @@ class DroneController:
 
     def get_gps_location(self, timeout: float = 10.0) -> tuple[float, float]:
         """Retrieves home/current GPS latitude and longitude from the flight controller."""
-        
+
         if not self.master:
             try:
                 self.connect()
@@ -190,11 +194,14 @@ class DroneController:
         start_time = time.time()
 
         while time.time() - start_time < timeout:
-
             try:
-                if hasattr(self.master, "port") and self.master.port and not self.master.port.isOpen():
+                if (
+                    hasattr(self.master, "port")
+                    and self.master.port
+                    and not self.master.port.isOpen()
+                ):
                     raise serial.SerialException("Serial port is closed.")
-                    
+
                 msg = self.master.recv_match(
                     type=["GLOBAL_POSITION_INT", "GPS_RAW_INT", "HOME_POSITION"],
                     blocking=True,
@@ -213,7 +220,9 @@ class DroneController:
                         return (lat, lon)
 
             except (serial.SerialException, AttributeError, Exception) as e:
-                logger.warning(f"Serial port disconnected during GPS fetch ({e}). Attempting auto-reconnect...")
+                logger.warning(
+                    f"Serial port disconnected during GPS fetch ({e}). Attempting auto-reconnect..."
+                )
                 try:
                     self.connect()
                 except Exception as conn_err:

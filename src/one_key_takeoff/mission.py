@@ -38,7 +38,7 @@ async def execute_mission(
 
             # 3. Dynamic Geofence check
             distance = geodesic(initial_pos, target_pos).meters
-            
+
             if distance > settings.max_geofence_meters:
                 msg = (
                     f"❌ Target is {distance:.1f}m away. "
