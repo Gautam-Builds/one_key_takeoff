@@ -40,9 +40,10 @@ class DroneController:
             self.master = mavutil.mavlink_connection(
                 self.connection_string, baud=self.baudrate
             )
-            self.master.wait_heartbeat(timeout=self.timeout)
+            # self.master.wait_heartbeat(timeout=self.timeout)
+            hb = self.master.wait_heartbeat(timeout=self.timeout)
 
-            if self.master.target_system == 0:
+            if hb is None or self.master.target_system == 0:
                 raise TimeoutError(
                     f"No heartbeat received from drone within {self.timeout}s timeout."
                 )
