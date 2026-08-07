@@ -1,5 +1,6 @@
 import time
 from typing import Any
+import serial
 
 from geopy.distance import geodesic
 from pymavlink import mavutil
@@ -178,29 +179,46 @@ class DroneController:
 
     def get_gps_location(self, timeout: float = 10.0) -> tuple[float, float]:
         """Retrieves home/current GPS latitude and longitude from the flight controller."""
+        
         if not self.master:
-            raise RuntimeError("Drone is not connected.")
+            try:
+                self.connect()
+            except Exception as e:
+                logger.error(f"Initial connection check failed: {e}")
 
         logger.info("Fetching GPS coordinates from flight controller...")
         start_time = time.time()
 
         while time.time() - start_time < timeout:
-            msg = self.master.recv_match(
-                type=["GLOBAL_POSITION_INT", "GPS_RAW_INT", "HOME_POSITION"],
-                blocking=True,
-                timeout=1.0,
-            )
-            if msg:
-                msg_type = msg.get_type()
-                lat_raw = getattr(msg, "lat", getattr(msg, "latitude", 0))
-                lon_raw = getattr(msg, "lon", getattr(msg, "longitude", 0))
-                if lat_raw != 0 or lon_raw != 0:
-                    lat = lat_raw / 1e7
-                    lon = lon_raw / 1e7
-                    logger.info(
-                        f"Retrieved GPS coordinates via {msg_type}: lat={lat:.7f}, lon={lon:.7f}"
-                    )
-                    return (lat, lon)
+
+            try:
+                if hasattr(self.master, "port") and self.master.port and not self.master.port.isOpen():
+                    raise serial.SerialException("Serial port is closed.")
+                    
+                msg = self.master.recv_match(
+                    type=["GLOBAL_POSITION_INT", "GPS_RAW_INT", "HOME_POSITION"],
+                    blocking=True,
+                    timeout=1.0,
+                )
+                if msg:
+                    msg_type = msg.get_type()
+                    lat_raw = getattr(msg, "lat", getattr(msg, "latitude", 0))
+                    lon_raw = getattr(msg, "lon", getattr(msg, "longitude", 0))
+                    if lat_raw != 0 or lon_raw != 0:
+                        lat = lat_raw / 1e7
+                        lon = lon_raw / 1e7
+                        logger.info(
+                            f"Retrieved GPS coordinates via {msg_type}: lat={lat:.7f}, lon={lon:.7f}"
+                        )
+                        return (lat, lon)
+
+            except (serial.SerialException, AttributeError, Exception) as e:
+                logger.warning(f"Serial port disconnected during GPS fetch ({e}). Attempting auto-reconnect...")
+                try:
+                    self.connect()
+                except Exception as conn_err:
+                    logger.error(f"Auto-reconnect failed: {conn_err}")
+                    time.sleep(1.0)
 
         if settings.home_lat is not None and settings.home_lon is not None:
             logger.warning(
