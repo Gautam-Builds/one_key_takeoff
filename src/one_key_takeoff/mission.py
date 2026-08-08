@@ -4,7 +4,7 @@ from geopy.distance import geodesic
 
 from .config import settings
 from .logger import get_logger
-from .notifier import NotificationService, default_notifier
+from .notifier import NotificationService, default_notifier, MissionReporter
 from .telemetry import DroneController
 
 logger = get_logger()
@@ -17,74 +17,53 @@ async def execute_mission(
     target_lon: float,
     notifier: NotificationService = default_notifier,
 ):
+
     """Executes closed-loop mission sequence using telemetry verification."""
+    reporter = MissionReporter(chat_id, notifier)
+
     if mission_lock.locked():
-        await notifier.send_notification(
-            chat_id,
-            "⚠️ Drone is currently executing another mission. Request queued/rejected.",
-        )
+        await reporter.notify_queued()
         return
 
     async with mission_lock:
         drone: DroneController | None = None
         try:
-            # 1. Connect to drone
+            # 1. Connect & Geofence Check
             logger.info(f"Connecting to flight controller for mission ({chat_id})...")
             drone = await asyncio.to_thread(DroneController)
 
-            # 2. Retrieve dynamic home / initial vehicle position
             initial_pos = await asyncio.to_thread(drone.get_gps_location, 10.0)
             target_pos = (target_lat, target_lon)
 
-            # 3. Dynamic Geofence check
             distance = geodesic(initial_pos, target_pos).meters
 
             if distance > settings.max_geofence_meters:
-                msg = (
-                    f"❌ Target is {distance:.1f}m away. "
-                    f"Exceeds max geofence of {settings.max_geofence_meters:.0f}m. Aborting mission."
-                )
-                logger.warning(msg)
-                await notifier.send_notification(chat_id, msg)
+                logger.warning (f"❌ Target is {distance:.1f}m away. " f"Exceeds max geofence of {settings.max_geofence_meters:.0f}m.")
+                await reporter.notify_geofence_violation(distance, settings.max_geofence_meters)
                 return
 
-            logger.info(
-                f"Starting mission for {chat_id}. Target: ({target_lat}, {target_lon}), Distance: {distance:.1f}m"
-            )
-            await notifier.send_notification(
-                chat_id,
-                f"✅ Mission Accepted! Target is {distance:.1f}m away. Finding nearest drone....",
-            )
+            logger.info(f"Starting mission for {chat_id}. Target: ({target_lat}, {target_lon}), Distance: {distance:.1f}m")
+            await reporter.notify_accepted(distance)
 
-            # 4. Arm and initiate takeoff
+            # 2. Takeoff
             takeoff_alt = settings.takeoff_altitude_meters
+
             logger.info(f"Arming and initiating takeoff to {takeoff_alt}m...")
-            await notifier.send_notification(
-                chat_id,
-                "🚁 Nearest drone acquired. Taking off ....",
-            )
+            await reporter.notify_takeoff()
+
             await asyncio.to_thread(drone.arm_and_takeoff, takeoff_alt)
 
-            # 5. Closed-loop Altitude Verification
+            # Closed-loop Altitude Verification
             logger.info(f"Waiting for drone to reach target altitude {takeoff_alt}m...")
-            achieved_alt = await asyncio.to_thread(
-                drone.wait_until_altitude, takeoff_alt, 0.5, 40.0
-            )
-            logger.info(f"Altitude reached: {achieved_alt:.1f}m")
-            # await notifier.send_notification(
-            #     chat_id,
-            #     f"Altitude reached ({achieved_alt:.1f}m). Navigating to coordinates...",
-            # )
+            await asyncio.to_thread(drone.wait_until_altitude, takeoff_alt, 0.5, 40.00)
+            logger.info(f"Altitude reached: {takeoff_alt:.1f}m")
 
-            # 6. Command navigation and Closed-loop Waypoint Reach Verification
+            # 3. Navigate to Target
             logger.info(f"Flying to target ({target_lat}, {target_lon})...")
-            await asyncio.to_thread(drone.fly_to, target_lat, target_lon, takeoff_alt)
-
-            # Calculate dynamic navigation timeout based on distance (min 5 m/s speed + 60s buffer)
             nav_timeout = max(60.0, (distance / 5.0) + 60.0)
-            logger.info(
-                f"Monitoring navigation to target (Timeout: {nav_timeout:.1f}s for {distance:.1f}m)..."
-            )
+            logger.info(f"Monitoring navigation to target (Timeout: {nav_timeout:.1f}s for {distance:.1f}m)...")
+
+            await asyncio.to_thread(drone.fly_to, target_lat, target_lon, takeoff_alt)
 
             final_dist = await asyncio.to_thread(
                 drone.wait_until_reached_location,
@@ -95,31 +74,39 @@ async def execute_mission(
                 nav_timeout,
             )
 
-            # 7. Target Hover (5s intentional hover)
-            await notifier.send_notification(
-                chat_id,
-                f"📍 Target reached (within {final_dist:.1f}m)! Hovering for {settings.hover_time_seconds} seconds...",
-            )
-            await asyncio.sleep(settings.hover_time_seconds)
+            # 4. Perform Orbit / Circle Mode
+            circle_alt = settings.orbit_altitude_meters
+            await reporter.notify_arrival(final_dist, circle_alt)
 
-            # 8. Return to Launch (RTL)
-            logger.info("Executing Return to Launch (RTL)...")
+            # Command the descent
+            logger.info(f"Descending to {circle_alt}m for orbit...")
+            await asyncio.to_thread(drone.change_altitude, circle_alt, target_lat, target_lon)
+
+            # Wait for the drone to physically reach the lower altitude
+            await asyncio.to_thread(drone.wait_until_altitude, circle_alt)
+
+            # 5. Orbit (Circle Mode)
+            await asyncio.to_thread(drone.perform_target_action)
+
+            # 6. Return to Launch (RTL)
+            logger.info("Orbit complete. Executing RTL...")
             await asyncio.to_thread(drone.rtl)
-            await notifier.send_notification(
-                chat_id, "🏠 Mission complete. Returning to launch position."
-            )
+            await reporter.notify_rtl()
 
-        except Exception:
-            logger.exception("Mission failed unexpectedly")
-            await notifier.send_notification(
-                chat_id, "🚨 Mission Error: Triggering fail-safe procedure."
-            )
+        except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                logger.warning("Mission task was cancelled!")
+            else:
+                logger.exception("Mission failed unexpectedly")
+
+            await reporter.notify_error()
 
             # Emergency Fallback Ladder: RTL -> LAND
-            if drone and drone.master:
+            if drone and getattr(drone, "master", None):
                 try:
                     logger.warning("Attempting fail-safe RTL command...")
                     await asyncio.to_thread(drone.rtl)
+                    await reporter.notify_rtl()
                 except Exception as rtl_err:  # noqa: BLE001
                     logger.error(
                         f"Failed to issue fail-safe RTL: {rtl_err}. Triggering LAND mode..."
@@ -129,6 +116,10 @@ async def execute_mission(
                     except Exception as land_err:  # noqa: BLE001
                         logger.critical(f"Critical Fail-safe failure: {land_err}")
 
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+
         finally:
             if drone:
                 await asyncio.to_thread(drone.close)
+

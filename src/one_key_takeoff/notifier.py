@@ -50,3 +50,31 @@ default_notifier = WhapiNotifier()
 async def send_whatsapp_message(chat_id: str, text: str):
     """Convenience function for backward compatibility."""
     await default_notifier.send_notification(chat_id, text)
+
+
+class MissionReporter:
+    """Handles UX and abstracts message formatting away from the mission logic."""
+    def __init__(self, chat_id: str, notifier: NotificationService = default_notifier):
+        self.chat_id = chat_id
+        self.notifier = notifier
+
+    async def notify_queued(self):
+        await self.notifier.send_notification(self.chat_id, "⚠️ Drone is currently executing another mission. Request queued/rejected.")
+
+    async def notify_geofence_violation(self, distance: float, max_dist: float):
+        await self.notifier.send_notification(self.chat_id, f"❌ Target is {distance:.1f}m away, exceeding the max geofence of {max_dist:.0f}m. Aborting.")
+
+    async def notify_accepted(self, distance: float):
+        await self.notifier.send_notification(self.chat_id, f"✅ Mission Accepted! Target is {distance:.1f}m away. Finding nearest drone...")
+
+    async def notify_takeoff(self):
+        await self.notifier.send_notification(self.chat_id, "🚁 Drone acquired and armed. Taking off...")
+
+    async def notify_arrival(self, distance: float, circle_alt: float):
+        await self.notifier.send_notification(self.chat_id, f"📍 Target reached (within {distance:.1f}m)! Descending to {circle_alt}m and initiating surveillance orbit.")
+
+    async def notify_rtl(self):
+        await self.notifier.send_notification(self.chat_id, "🏠 Surveillance complete. Returning to launch position (RTL).")
+
+    async def notify_error(self):
+        await self.notifier.send_notification(self.chat_id, "🚨 Mission Error: Triggering emergency fail-safe procedure.")

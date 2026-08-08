@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     drone_baudrate: int = 115200
     drone_connection_timeout: int = 10
     drone_arm_timeout: int = 30
+    connection_max_retries: int = 5
 
     # Flight & Safety Boundaries
     home_lat: float = 10.010624
@@ -22,7 +23,9 @@ class Settings(BaseSettings):
     max_geofence_meters: float = 2000.0
     takeoff_altitude_meters: float = 20.0
     hover_time_seconds: int = 5
-    connection_max_retries: int = 5
+    orbit_radius_meters: float = 10.0
+    orbit_altitude_meters: float = 20.0
+    orbit_duration_seconds: int = 30
 
     # Logging Settings
     log_level: str = "INFO"
