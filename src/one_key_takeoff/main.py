@@ -6,17 +6,33 @@ from fastapi import BackgroundTasks, FastAPI
 from .config import settings
 from .logger import get_logger
 from .mission import execute_mission
-from .notifier import default_notifier
+from .notifier import default_notifier, MissionReporter
 from .schemas import WebhookPayload
+from .location import extract_url_from_text, resolve_maps_url
 
 logger = get_logger()
+
+async def process_url_and_execute(chat_id: str, url: str):
+    """Background task orchestrator for URL processing."""
+    reporter = MissionReporter(chat_id, default_notifier)
+    await reporter.notify_extracting_url()
+
+    try:
+        coords = await resolve_maps_url(url)
+        if coords:
+            lat, lon = coords
+            logger.info(f"Successfully extracted coordinates: {lat}, {lon}")
+            await execute_mission(chat_id, lat, lon, default_notifier)
+        else:
+            await reporter.notify_invalid_url()
+    except Exception:
+        await reporter.notify_url_error()
+
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(
-        f"Starting One Key Takeoff API in {settings.app_env} mode (Host: {settings.host}:{settings.port})."
-    )
+    logger.info(f"Starting One Key Takeoff API in {settings.app_env} mode (Host: {settings.host}:{settings.port}).")
     yield
     logger.info("Shutting down API server.")
 
@@ -46,33 +62,29 @@ async def receive_webhook(
                 continue
 
             sender = msg.chat_id
+            reporter = MissionReporter(sender, default_notifier)
 
             if msg.location is not None:
-                lat = msg.location.latitude
-                lon = msg.location.longitude
-                logger.info(
-                    f"Incoming Location Pin from {sender}: lat={lat}, lon={lon}"
-                )
-
-                # Dispatch background mission task
+                lat, lon = msg.location.latitude, msg.location.longitude
+                logger.info(f"Incoming Location Pin from {sender}: lat={lat}, lon={lon}")
                 background_tasks.add_task(execute_mission, sender, lat, lon)
+
                 logger.info("Mission task dispatched to background worker pool.")
 
             elif msg.text is not None:
                 body = msg.text.body.strip()
                 logger.info(f"Incoming Text from {sender}: {body}")
 
-                if body.lower() == "start":
-                    await default_notifier.send_notification(
-                        sender,
-                        "Welcome to Robothrize Systems. Please send a location pin to initiate a drone mission.",
-                    )
+                url = extract_url_from_text(body)
+
+                if url:
+                    logger.info(f"Incoming Maps URL from {sender}: {url}")
+                    background_tasks.add_task(process_url_and_execute, sender, url)
+                elif body.lower() == "start":
+                    background_tasks.add_task(reporter.notify_welcome)
 
     return {"status": "success"}
 
 
 def start():
-    """CLI entrypoint for starting the uvicorn server."""
-    uvicorn.run(
-        "one_key_takeoff.main:app", host=settings.host, port=settings.port, reload=True
-    )
+    uvicorn.run("one_key_takeoff.main:app", host=settings.host, port=settings.port, reload=True)

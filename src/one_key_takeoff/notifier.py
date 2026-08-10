@@ -58,6 +58,19 @@ class MissionReporter:
         self.chat_id = chat_id
         self.notifier = notifier
 
+
+    async def notify_welcome(self):
+        await self.notifier.send_notification(self.chat_id, "Welcome to Rovonize Systems. Please send a location pin or a Google Maps link to initiate a drone mission.")
+
+    async def notify_extracting_url(self):
+        await self.notifier.send_notification(self.chat_id, "🔄 Extracting coordinates from Google Maps link...")
+
+    async def notify_invalid_url(self):
+        await self.notifier.send_notification(self.chat_id, "❌ Could not extract coordinates from that link. Please try sending a native WhatsApp location pin.")
+
+    async def notify_url_error(self):
+        await self.notifier.send_notification(self.chat_id, "🚨 Error processing the Google Maps link. Please send a native location pin.")
+
     async def notify_queued(self):
         await self.notifier.send_notification(self.chat_id, "⚠️ Drone is currently executing another mission. Request queued/rejected.")
 

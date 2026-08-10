@@ -262,10 +262,13 @@ class DroneController:
         
         # MAVLink standard requires param_id to be exactly 16 bytes
         param_id_bytes = param_id.encode("utf-8").ljust(16, b"\x00")
+
+        target_system = self.master.target_system if self.master.target_system != 0 else 1
+        target_component = 1
         
         self.master.mav.param_set_send(
-            self.master.target_system,
-            self.master.target_component,
+            target_system,
+            target_component,
             param_id_bytes,
             param_value,
             mavlink.MAV_PARAM_TYPE_REAL32
@@ -497,8 +500,9 @@ class DroneController:
 
         while time.time() - start_time < timeout and not self._is_closing:
             try:
-                if hasattr(self.master, "port") and self.master.port and not self.master.port.isOpen():
-                    raise serial.SerialException("Serial port is closed.")
+                if hasattr(self.master, "port") and self.master.port:
+                    if hasattr(self.master.port, "isOpen") and not self.master.port.isOpen():
+                        raise serial.SerialException("Serial port is closed.")
 
                 msg = self.master.recv_match(
                     type=["GLOBAL_POSITION_INT", "STATUSTEXT", "COMMAND_ACK", "HEARTBEAT"],
