@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     orbit_radius_meters: float = 10.0
     orbit_altitude_meters: float = 20.0
     orbit_duration_seconds: int = 30
+    orbit_speed_mps: float = 2.0
+    orbit_rate_dps: float = 15.0
 
     # Logging Settings
     log_level: str = "INFO"

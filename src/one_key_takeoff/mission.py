@@ -79,11 +79,11 @@ async def execute_mission(
             await reporter.notify_arrival(final_dist, circle_alt)
 
             # Command the descent
-            logger.info(f"Descending to {circle_alt}m for orbit...")
-            await asyncio.to_thread(drone.change_altitude, circle_alt, target_lat, target_lon)
+            # logger.info(f"Descending to {circle_alt}m for orbit...")
+            # await asyncio.to_thread(drone.change_altitude, circle_alt, target_lat, target_lon)
 
-            # Wait for the drone to physically reach the lower altitude
-            await asyncio.to_thread(drone.wait_until_altitude, circle_alt)
+            # # Wait for the drone to physically reach the lower altitude
+            # await asyncio.to_thread(drone.wait_until_altitude, circle_alt)
 
             # 5. Orbit (Circle Mode)
             await asyncio.to_thread(drone.perform_target_action)

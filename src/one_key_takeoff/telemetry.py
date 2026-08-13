@@ -28,10 +28,23 @@ class DroneController:
         self.connection_string = connection_string or settings.drone_connection_string
         self.baudrate = baudrate or settings.drone_baudrate
         self.timeout = timeout or settings.drone_connection_timeout
+
         self.master: Any = None
         self._is_closing = False
+
         self._stop_heartbeat = threading.Event()
         self._heartbeat_thread: threading.Thread | None = None
+        self._reader_thread: threading.Thread | None = None
+
+        self.vehicle_state = {
+            "parameters": {},
+            "mode": None,
+            "altitude": 0.0
+        }
+        self.events = {
+            "param_received": threading.Event()
+        }
+        self._reader_thread = None
 
         self.connect()
 
@@ -63,6 +76,7 @@ class DroneController:
                 # Connection successful, request data streams & start background heartbeat
                 self.request_data_streams(4)
                 self._start_heartbeat_thread()
+                self._start_reader_thread()
                 return
 
             except Exception as e:
@@ -85,6 +99,67 @@ class DroneController:
                     )
                     raise  # Pass the error up so the mission aborts cleanly
 
+    # ---------------------------------------------------------
+    # READER THREAD
+    # ---------------------------------------------------------
+
+    def _start_reader_thread(self):
+        self._stop_reader_thread()
+        self._reader_thread = threading.Thread(
+            target=self._reader_loop, name="MAVLink-Reader", daemon=True
+        )
+        self._reader_thread.start()
+        logger.info("Background MAVLink reader thread started.")
+
+    def _stop_reader_thread(self):
+        if self._reader_thread and self._reader_thread.is_alive():
+            self._reader_thread.join(timeout=2.0)
+        self._reader_thread = None
+
+    def _reader_loop(self):
+        """Continuously reads MAVLink messages and updates the global state dictionary."""
+        while not self._is_closing:
+            if not self.master:
+                time.sleep(0.5)
+                continue
+
+            try:
+                msg = self.master.recv_msg()
+
+                if not msg:
+                    time.sleep(0.01)
+                    continue
+
+                msg_type = msg.get_type()
+
+                if msg_type == "PARAM_VALUE":
+                    param_id = msg.param_id
+                    if isinstance(param_id, bytes):
+                        param_id = param_id.decode("utf-8", errors="ignore")
+                    param_id = param_id.rstrip("\x00")
+                    
+                    self.vehicle_state["parameters"][param_id] = msg.param_value
+                    self.events["param_received"].set()
+
+                elif msg_type == "STATUSTEXT":
+                    text = msg.text
+                    if isinstance(text, bytes):
+                        text = text.decode("utf-8", errors="ignore")
+                    logger.info(f"FC StatusText: {text}")
+
+                elif msg_type == "HEARTBEAT":
+                    self.vehicle_state["mode"] = getattr(msg, "custom_mode", None)
+
+            except Exception as e:
+                logger.warning(f"Error in MAVLink reader loop: {e}")
+                if self._is_closing:
+                    break
+                time.sleep(0.5)
+
+    # ---------------------------------------------------------
+    # HEARTBEAT THREAD
+    # ---------------------------------------------------------
+
     def _start_heartbeat_thread(self):
         """Spawns background thread emitting 1 Hz MAVLink Heartbeat to FC."""
         self._stop_heartbeat_thread()
@@ -95,6 +170,13 @@ class DroneController:
         self._heartbeat_thread.start()
         logger.info("Background MAVLink heartbeat thread started.")
 
+    def _stop_heartbeat_thread(self):
+        """Stops the heartbeat thread cleanly."""
+        self._stop_heartbeat.set()
+        if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+            self._heartbeat_thread.join(timeout=2.0)
+        self._heartbeat_thread = None
+
     def _heartbeat_loop(self):
         """Emits MAVLink Heartbeat every 1 second to keep GCS failsafe clear."""
         while not self._stop_heartbeat.is_set() and not self._is_closing:
@@ -103,25 +185,22 @@ class DroneController:
                     self.master.mav.heartbeat_send(
                         mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
                         mavlink.MAV_AUTOPILOT_INVALID,
-                        0,
-                        0,
-                        0,
+                        0, 0, 0,
                     )
                 except Exception:
                     pass
             self._stop_heartbeat.wait(1.0)
 
-    def _stop_heartbeat_thread(self):
-        """Stops the heartbeat thread cleanly."""
-        self._stop_heartbeat.set()
-        if self._heartbeat_thread and self._heartbeat_thread.is_alive():
-            self._heartbeat_thread.join(timeout=2.0)
-        self._heartbeat_thread = None
+    # ---------------------------------------------------------
+    # CLEANUP
+    # ---------------------------------------------------------
 
     def close(self):
         """Closes the MAVLink connection cleanly."""
         self._is_closing = True
         self._stop_heartbeat_thread()
+        self._stop_reader_thread()
+
         if self.master:
             logger.info("Closing MAVLink connection...")
             try:
@@ -263,35 +342,63 @@ class DroneController:
         # MAVLink standard requires param_id to be exactly 16 bytes
         param_id_bytes = param_id.encode("utf-8").ljust(16, b"\x00")
 
-        target_system = self.master.target_system if self.master.target_system != 0 else 1
-        target_component = 1
+        fc_system = 1 if self.master.target_system in (0, 255) else self.master.target_system
+        fc_component = 1
+
+        self.vehicle_state["parameters"].pop(param_id, None)
+
+        # self.events["param_received"].clear()
         
         self.master.mav.param_set_send(
-            target_system,
-            target_component,
-            param_id_bytes,
-            param_value,
-            mavlink.MAV_PARAM_TYPE_REAL32
+            fc_system, fc_component, param_id_bytes, param_value, mavlink.MAV_PARAM_TYPE_REAL32
         )
 
         start_time = time.time()
-        while time.time() - start_time < timeout and not self._is_closing:
-            try:
-                msg = self.master.recv_match(type="PARAM_VALUE", blocking=True, timeout=1.0)
-                if msg:
-                    msg_param_id = msg.param_id
-                    if isinstance(msg_param_id, bytes):
-                        msg_param_id = msg_param_id.decode("utf-8", errors="ignore")
-                    msg_param_id = msg_param_id.rstrip("\x00")
+        last_request_time = 0.0
 
-                    if msg_param_id == param_id:
-                        logger.info(f"✅ Parameter {param_id} confirmed set to {msg.param_value}")
-                        return True
-            except Exception as e:
-                logger.warning(f"Error while waiting for parameter ACK: {e}")
+        while time.time() - start_time < timeout and not self._is_closing:
+            # self.events["param_received"].wait(timeout=1)
+
+            if time.time() - last_request_time > 1.0:
+                self.master.mav.param_request_read_send(
+                    fc_system, fc_component, param_id_bytes, -1
+                )
+                last_request_time = time.time()
+
+            if param_id in self.vehicle_state["parameters"]:
+                current_value = self.vehicle_state["parameters"][param_id]
+
+                if abs(current_value - param_value) < 0.01:
+                    logger.info(f"✅ Parameter {param_id} set successfully to {param_value}")
+                    return True
+                else:
+                    self.master.mav.param_set_send(
+                        fc_system, fc_component, param_id_bytes, param_value, mavlink.MAV_PARAM_TYPE_REAL32
+                    )
+                    self.vehicle_state["parameters"].pop(param_id, None)
+
+            time.sleep(0.05)
 
         logger.warning(f"⚠️ Parameter {param_id} set request sent, but no PARAM_VALUE ACK received within {timeout}s.")
         return False
+
+    def set_rc_override(self, channel: int, pwm: int):
+        """
+        Overrides a specific RC channel.
+        MAVLink uses 65535 to mean "ignore/do not override this channel".
+        Sending 0 or 65535 releases the override.
+        """
+        if not self.master:
+            return
+            
+        rc_values = [65535] * 18 
+        rc_values[channel - 1] = pwm
+        
+        self.master.mav.rc_channels_override_send(
+            self.master.target_system,
+            self.master.target_component,
+            *rc_values
+        )
 
     def get_gps_location(self, timeout: float = 10.0) -> tuple[float, float]:
         """Retrieves home/current GPS latitude and longitude from the flight controller."""
@@ -676,46 +783,75 @@ class DroneController:
     def perform_target_action(self):
         """Executes a CIRCLE orbit around the drone's current position with continuous telemetry polling."""
 
+        if not self.master:
+            raise RuntimeError("Drone is not connected.")
+
         radius = settings.orbit_radius_meters
+        orbit_speed = settings.orbit_speed_mps
+        rate = settings.orbit_rate_dps
         duration = settings.orbit_duration_seconds
 
-        logger.info(f"Initiating orbit: {radius}m radius for {duration}s...")
+        logger.info(f"Initiating orbit: {radius}m radius for {duration}s at {orbit_speed} m/s...")
 
+        
         # 1. Set the circle radius (ArduPilot expects centimeters)
-        self.set_parameter("CIRCLE_RADIUS", radius * 100.0)
+        # self.set_parameter("CIRCLE_RADIUS", radius * 100.0)
+        modern_success = self.set_parameter("CIRCLE_RADIUS_M", float(radius), timeout=2.0)
+        
+        if not modern_success:
+            logger.info("Modern CIRCLE_RADIUS_M not found. Falling back to legacy CIRCLE_RADIUS (cm)...")
+            # Fall back to the legacy parameter (centimeters)
+            self.set_parameter("CIRCLE_RADIUS", radius * 100.0, timeout=2.0)
+
+
+        self.set_parameter("CIRCLE_RATE", rate)
+
+        self.set_rc_override(channel=3, pwm=1500)
 
         # 2. Command the mode change and verify it worked
         mode_accepted = self.set_mode("CIRCLE", timeout=5.0)
 
         if not mode_accepted:
+            self.set_rc_override(channel=3, pwm=65535)
             raise RuntimeError("Failed to enter CIRCLE mode. Orbit aborted.")
+        
 
         # 3. Wait loop with continuous telemetry & heartbeat polling
         logger.info(f"Successfully entered CIRCLE mode. Orbiting for {duration} seconds...")
         start_time = time.time()
-        while time.time() - start_time < duration and not self._is_closing:
-            try:
-                msg = self.master.recv_match(
-                    type=["STATUSTEXT", "HEARTBEAT"], blocking=True, timeout=1.0
-                )
-                if msg:
-                    msg_type = msg.get_type()
-                    if msg_type == "STATUSTEXT":
-                        text = msg.text
-                        if isinstance(text, bytes):
-                            text = text.decode("utf-8", errors="ignore")
-                        logger.info(f"FC StatusText: {text}")
-                    elif msg_type == "HEARTBEAT":
-                        mode_map = self.master.mode_mapping() if self.master else None
-                        circle_id = mode_map.get("CIRCLE") if mode_map else None
-                        current_mode = getattr(msg, "custom_mode", None)
-                        if circle_id is not None and current_mode != circle_id:
-                            raise RuntimeError(f"Flight mode changed unexpectedly away from CIRCLE to custom_mode ID {current_mode}")
-            except (serial.SerialException, AttributeError, OSError) as e:
-                logger.warning(f"Serial interruption during orbit ({e})")
-                time.sleep(0.5)
 
-        logger.info("Orbit duration completed.")
+        try:
+            while time.time() - start_time < duration and not self._is_closing:
+                try:
+                    self.set_rc_override(channel=3, pwm=1500)
+
+
+                    msg = self.master.recv_match(
+                        type=["STATUSTEXT", "HEARTBEAT"], blocking=True, timeout=1.0
+                    )
+                    if msg:
+                        msg_type = msg.get_type()
+                        if msg_type == "STATUSTEXT":
+                            text = msg.text
+                            if isinstance(text, bytes):
+                                text = text.decode("utf-8", errors="ignore")
+                            logger.info(f"FC StatusText: {text}")
+
+                        elif msg_type == "HEARTBEAT":
+                            mode_map = self.master.mode_mapping() if self.master else None
+                            circle_id = mode_map.get("CIRCLE") if mode_map else None
+                            current_mode = getattr(msg, "custom_mode", None)
+
+                            if circle_id is not None and current_mode != circle_id:
+                                raise RuntimeError(f"Flight mode changed unexpectedly away from CIRCLE to custom_mode ID {current_mode}")
+
+                except (serial.SerialException, AttributeError, OSError) as e:
+                    logger.warning(f"Serial interruption during orbit ({e})")
+                    time.sleep(0.5)
+        finally:
+            self.set_rc_override(channel=3, pwm=65535)
+            self.set_mode("GUIDED", timeout=5.0)
+            logger.info("Orbit duration completed.")
 
     def rtl(self):
         """Commands Return-To-Launch (RTL)."""

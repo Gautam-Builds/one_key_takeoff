@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI
-
+import re
 from .config import settings
 from .logger import get_logger
 from .mission import execute_mission
@@ -56,6 +56,8 @@ async def receive_webhook(
     background_tasks: BackgroundTasks,
     event_type: str | None = "messages",
 ):
+
+    
     if event_type == "messages" or event_type is None:
         for msg in payload.messages:
             if msg.from_me:
@@ -69,17 +71,26 @@ async def receive_webhook(
                 logger.info(f"Incoming Location Pin from {sender}: lat={lat}, lon={lon}")
                 background_tasks.add_task(execute_mission, sender, lat, lon)
 
-                logger.info("Mission task dispatched to background worker pool.")
+            elif msg.type == "link_preview" and msg.link_preview is not None:
+                url = msg.link_preview.url
+                logger.info(f"Incoming Maps URL (Link Preview) from {sender}: {url}")
+                background_tasks.add_task(process_url_and_execute, sender, url)
 
             elif msg.text is not None:
                 body = msg.text.body.strip()
-                logger.info(f"Incoming Text from {sender}: {body}")
 
                 url = extract_url_from_text(body)
+                pattern = r"^-?\d+(\.\d+)?,-?\d+(\.\d+)?$"
 
                 if url:
                     logger.info(f"Incoming Maps URL from {sender}: {url}")
                     background_tasks.add_task(process_url_and_execute, sender, url)
+
+                elif re.match(pattern, body):
+                    lat, lon = map(float, body.split(","))
+                    logger.info(f"Incoming Coordinates from {sender}: lat={lat}, lon={lon}")
+                    background_tasks.add_task(execute_mission, sender, lat, lon)
+                
                 elif body.lower() == "start":
                     background_tasks.add_task(reporter.notify_welcome)
 
@@ -87,4 +98,4 @@ async def receive_webhook(
 
 
 def start():
-    uvicorn.run("one_key_takeoff.main:app", host=settings.host, port=settings.port, reload=True)
+    uvicorn.run("one_key_takeoff.main:app", host=settings.host, port=settings.port, reload=True    )
