@@ -142,7 +142,8 @@ class DroneController:
                     logger.info(f"FC StatusText: {text}")
 
                 elif msg_type == "HEARTBEAT":
-                    self.vehicle_state["mode"] = getattr(msg, "custom_mode", None)
+                    if msg.get_srcComponent() == 1:
+                        self.vehicle_state["mode"] = getattr(msg, "custom_mode", None)
 
             except Exception as e:
                 logger.warning(f"Error in MAVLink reader loop: {e}")
@@ -900,16 +901,17 @@ class DroneController:
                             logger.info(f"FC StatusText: {text}")
 
                         elif msg_type == "HEARTBEAT":
-                            mode_map = (
-                                self.master.mode_mapping() if self.master else None
-                            )
-                            circle_id = mode_map.get("CIRCLE") if mode_map else None
-                            current_mode = getattr(msg, "custom_mode", None)
-
-                            if circle_id is not None and current_mode != circle_id:
-                                raise RuntimeError(
-                                    f"Flight mode changed unexpectedly away from CIRCLE to custom_mode ID {current_mode}"
+                            if msg.get_srcComponent() == 1:
+                                mode_map = (
+                                    self.master.mode_mapping() if self.master else None
                                 )
+                                circle_id = mode_map.get("CIRCLE") if mode_map else None
+                                current_mode = getattr(msg, "custom_mode", None)
+
+                                if circle_id is not None and current_mode != circle_id:
+                                    raise RuntimeError(
+                                        f"Flight mode changed unexpectedly away from CIRCLE to custom_mode ID {current_mode}"
+                                    )
 
                 except (serial.SerialException, AttributeError, OSError) as e:
                     logger.warning(f"Serial interruption during orbit ({e})")
