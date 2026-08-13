@@ -662,18 +662,19 @@ class DroneController:
                     logger.info(f"Command ACK: cmd={msg.command}, result={msg.result}")
                     continue
                 elif msg_type == "HEARTBEAT":
-                    mode_map = self.master.mode_mapping() if self.master else None
-                    guided_id = mode_map.get("GUIDED") if mode_map else None
-                    loiter_id = mode_map.get("LOITER") if mode_map else None
-                    current_mode = getattr(msg, "custom_mode", None)
-                    if guided_id is not None and current_mode not in (
-                        guided_id,
-                        loiter_id,
-                    ):
-                        raise RuntimeError(
-                            f"Flight mode changed unexpectedly away from GUIDED to custom_mode ID {current_mode}"
-                        )
-                    continue
+                    if msg.get_srcComponent() == 1:
+                        mode_map = self.master.mode_mapping() if self.master else None
+                        guided_id = mode_map.get("GUIDED") if mode_map else None
+                        loiter_id = mode_map.get("LOITER") if mode_map else None
+                        current_mode = getattr(msg, "custom_mode", None)
+                        if guided_id is not None and current_mode not in (
+                            guided_id,
+                            loiter_id,
+                        ):
+                            raise RuntimeError(
+                                f"Flight mode changed unexpectedly away from GUIDED to custom_mode ID {current_mode}"
+                            )
+                        continue
 
                 elif msg_type == "GLOBAL_POSITION_INT":
                     rel_alt = msg.relative_alt / 1000.0
@@ -799,14 +800,15 @@ class DroneController:
                     logger.info(f"FC StatusText: {text}")
                     continue
                 elif msg_type == "HEARTBEAT":
-                    mode_map = self.master.mode_mapping() if self.master else None
-                    guided_id = mode_map.get("GUIDED") if mode_map else None
-                    current_mode = getattr(msg, "custom_mode", None)
-                    if guided_id is not None and current_mode != guided_id:
-                        raise RuntimeError(
-                            f"Flight mode changed unexpectedly away from GUIDED to custom_mode ID {current_mode}"
-                        )
-                    continue
+                    if msg.get_srcComponent() == 1:
+                        mode_map = self.master.mode_mapping() if self.master else None
+                        guided_id = mode_map.get("GUIDED") if mode_map else None
+                        current_mode = getattr(msg, "custom_mode", None)
+                        if guided_id is not None and current_mode != guided_id:
+                            raise RuntimeError(
+                                f"Flight mode changed unexpectedly away from GUIDED to custom_mode ID {current_mode}"
+                            )
+                        continue
 
                 current_lat = msg.lat / 1e7
                 current_lon = msg.lon / 1e7
