@@ -51,6 +51,7 @@ def test_arm_and_takeoff_prearm_failure_raises():
     controller.verify_prearm_checks = MagicMock(return_value=False)
 
     import pytest
+
     with pytest.raises(RuntimeError, match="Pre-arm checks failed"):
         controller.arm_and_takeoff(20.0)
 
@@ -83,6 +84,7 @@ def test_heartbeat_thread_start_and_stop():
     controller.master = MagicMock()
     controller._is_closing = False
     import threading
+
     controller._stop_heartbeat = threading.Event()
     controller._heartbeat_thread = None
 
@@ -93,4 +95,3 @@ def test_heartbeat_thread_start_and_stop():
     controller.close()
     assert controller._is_closing is True
     assert controller.master is None
-

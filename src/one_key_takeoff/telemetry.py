@@ -36,14 +36,8 @@ class DroneController:
         self._heartbeat_thread: threading.Thread | None = None
         self._reader_thread: threading.Thread | None = None
 
-        self.vehicle_state = {
-            "parameters": {},
-            "mode": None,
-            "altitude": 0.0
-        }
-        self.events = {
-            "param_received": threading.Event()
-        }
+        self.vehicle_state = {"parameters": {}, "mode": None, "altitude": 0.0}
+        self.events = {"param_received": threading.Event()}
         self._reader_thread = None
 
         self.connect()
@@ -137,7 +131,7 @@ class DroneController:
                     if isinstance(param_id, bytes):
                         param_id = param_id.decode("utf-8", errors="ignore")
                     param_id = param_id.rstrip("\x00")
-                    
+
                     self.vehicle_state["parameters"][param_id] = msg.param_value
                     self.events["param_received"].set()
 
@@ -185,7 +179,9 @@ class DroneController:
                     self.master.mav.heartbeat_send(
                         mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
                         mavlink.MAV_AUTOPILOT_INVALID,
-                        0, 0, 0,
+                        0,
+                        0,
+                        0,
                     )
                 except Exception:
                     pass
@@ -220,7 +216,9 @@ class DroneController:
         """Requests targeted MAVLink telemetry data streams from flight controller."""
         if not self.master:
             return
-        logger.info(f"Configuring MAVLink telemetry stream intervals at {rate_hz} Hz...")
+        logger.info(
+            f"Configuring MAVLink telemetry stream intervals at {rate_hz} Hz..."
+        )
         try:
             # Set targeted message interval for GLOBAL_POSITION_INT (msg #33)
             self.master.mav.command_long_send(
@@ -230,7 +228,11 @@ class DroneController:
                 0,
                 mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,
                 int(1e6 / rate_hz),
-                0, 0, 0, 0, 0
+                0,
+                0,
+                0,
+                0,
+                0,
             )
             # Fallback stream request for compatibility
             self.master.mav.request_data_stream_send(
@@ -318,7 +320,9 @@ class DroneController:
                 elif msg_type == "GPS_RAW_INT":
                     fix_type = getattr(msg, "fix_type", 0)
                     satellites = getattr(msg, "satellites_visible", 0)
-                    logger.info(f"GPS Status: fix_type={fix_type}, satellites={satellites}")
+                    logger.info(
+                        f"GPS Status: fix_type={fix_type}, satellites={satellites}"
+                    )
                     if fix_type >= 3:
                         gps_fix_ok = True
                         break
@@ -327,30 +331,36 @@ class DroneController:
                 time.sleep(0.5)
 
         if not gps_fix_ok:
-            logger.warning(
-                "GPS 3D Fix not confirmed. Pre-arm check warning issued."
-            )
+            logger.warning("GPS 3D Fix not confirmed. Pre-arm check warning issued.")
         return gps_fix_ok
 
-    def set_parameter(self, param_id: str, param_value: float, timeout: float = 5.0) -> bool:
+    def set_parameter(
+        self, param_id: str, param_value: float, timeout: float = 5.0
+    ) -> bool:
         """Sets an ArduPilot parameter dynamically and waits for PARAM_VALUE ACK."""
         if not self.master:
             raise RuntimeError("Drone is not connected.")
 
         logger.info(f"Setting parameter {param_id} to {param_value}")
-        
+
         # MAVLink standard requires param_id to be exactly 16 bytes
         param_id_bytes = param_id.encode("utf-8").ljust(16, b"\x00")
 
-        fc_system = 1 if self.master.target_system in (0, 255) else self.master.target_system
+        fc_system = (
+            1 if self.master.target_system in (0, 255) else self.master.target_system
+        )
         fc_component = 1
 
         self.vehicle_state["parameters"].pop(param_id, None)
 
         # self.events["param_received"].clear()
-        
+
         self.master.mav.param_set_send(
-            fc_system, fc_component, param_id_bytes, param_value, mavlink.MAV_PARAM_TYPE_REAL32
+            fc_system,
+            fc_component,
+            param_id_bytes,
+            param_value,
+            mavlink.MAV_PARAM_TYPE_REAL32,
         )
 
         start_time = time.time()
@@ -369,17 +379,25 @@ class DroneController:
                 current_value = self.vehicle_state["parameters"][param_id]
 
                 if abs(current_value - param_value) < 0.01:
-                    logger.info(f"✅ Parameter {param_id} set successfully to {param_value}")
+                    logger.info(
+                        f"✅ Parameter {param_id} set successfully to {param_value}"
+                    )
                     return True
                 else:
                     self.master.mav.param_set_send(
-                        fc_system, fc_component, param_id_bytes, param_value, mavlink.MAV_PARAM_TYPE_REAL32
+                        fc_system,
+                        fc_component,
+                        param_id_bytes,
+                        param_value,
+                        mavlink.MAV_PARAM_TYPE_REAL32,
                     )
                     self.vehicle_state["parameters"].pop(param_id, None)
 
             time.sleep(0.05)
 
-        logger.warning(f"⚠️ Parameter {param_id} set request sent, but no PARAM_VALUE ACK received within {timeout}s.")
+        logger.warning(
+            f"⚠️ Parameter {param_id} set request sent, but no PARAM_VALUE ACK received within {timeout}s."
+        )
         return False
 
     def set_rc_override(self, channel: int, pwm: int):
@@ -390,14 +408,12 @@ class DroneController:
         """
         if not self.master:
             return
-            
-        rc_values = [65535] * 18 
+
+        rc_values = [65535] * 18
         rc_values[channel - 1] = pwm
-        
+
         self.master.mav.rc_channels_override_send(
-            self.master.target_system,
-            self.master.target_component,
-            *rc_values
+            self.master.target_system, self.master.target_component, *rc_values
         )
 
     def get_gps_location(self, timeout: float = 10.0) -> tuple[float, float]:
@@ -486,12 +502,16 @@ class DroneController:
         start_time = time.time()
         while time.time() - start_time < timeout and not self._is_closing:
             try:
-                msg = self.master.recv_match(type="HEARTBEAT", blocking=True, timeout=1.0)
+                msg = self.master.recv_match(
+                    type="HEARTBEAT", blocking=True, timeout=1.0
+                )
                 if msg and getattr(msg, "custom_mode", None) == mode_id:
                     logger.info(f"✅ Flight mode successfully changed to {mode}.")
                     return True
             except (serial.SerialException, OSError, AttributeError) as e:
-                logger.warning(f"Serial interruption while verifying mode change to {mode}: {e}")
+                logger.warning(
+                    f"Serial interruption while verifying mode change to {mode}: {e}"
+                )
                 time.sleep(0.5)
 
         logger.error(f"❌ Mode change failed. FC refused to enter {mode} mode.")
@@ -561,7 +581,9 @@ class DroneController:
 
         # Strictly enforce pre-arm checks (3D GPS Lock & FC status)
         if not self.verify_prearm_checks(timeout=5.0):
-            raise RuntimeError("Pre-arm checks failed: GPS 3D lock not confirmed or FC pre-arm error.")
+            raise RuntimeError(
+                "Pre-arm checks failed: GPS 3D lock not confirmed or FC pre-arm error."
+            )
 
         # 1. Enter LOITER for safety checks
         if not self.set_mode("LOITER", timeout=5.0):
@@ -608,11 +630,19 @@ class DroneController:
         while time.time() - start_time < timeout and not self._is_closing:
             try:
                 if hasattr(self.master, "port") and self.master.port:
-                    if hasattr(self.master.port, "isOpen") and not self.master.port.isOpen():
+                    if (
+                        hasattr(self.master.port, "isOpen")
+                        and not self.master.port.isOpen()
+                    ):
                         raise serial.SerialException("Serial port is closed.")
 
                 msg = self.master.recv_match(
-                    type=["GLOBAL_POSITION_INT", "STATUSTEXT", "COMMAND_ACK", "HEARTBEAT"],
+                    type=[
+                        "GLOBAL_POSITION_INT",
+                        "STATUSTEXT",
+                        "COMMAND_ACK",
+                        "HEARTBEAT",
+                    ],
                     blocking=True,
                     timeout=1.0,
                 )
@@ -636,20 +666,31 @@ class DroneController:
                     guided_id = mode_map.get("GUIDED") if mode_map else None
                     loiter_id = mode_map.get("LOITER") if mode_map else None
                     current_mode = getattr(msg, "custom_mode", None)
-                    if guided_id is not None and current_mode not in (guided_id, loiter_id):
-                        raise RuntimeError(f"Flight mode changed unexpectedly away from GUIDED to custom_mode ID {current_mode}")
+                    if guided_id is not None and current_mode not in (
+                        guided_id,
+                        loiter_id,
+                    ):
+                        raise RuntimeError(
+                            f"Flight mode changed unexpectedly away from GUIDED to custom_mode ID {current_mode}"
+                        )
                     continue
 
                 elif msg_type == "GLOBAL_POSITION_INT":
                     rel_alt = msg.relative_alt / 1000.0
-                    logger.info(f"Telemetry: Current Alt = {rel_alt:.2f}m / Target = {target_alt}m")
+                    logger.info(
+                        f"Telemetry: Current Alt = {rel_alt:.2f}m / Target = {target_alt}m"
+                    )
 
                     if abs(rel_alt - target_alt) <= tolerance:
-                        logger.info(f"Target altitude reached! Current alt: {rel_alt:.2f}m")
+                        logger.info(
+                            f"Target altitude reached! Current alt: {rel_alt:.2f}m"
+                        )
                         return True
 
             except (serial.SerialException, AttributeError, OSError) as e:
-                logger.warning(f"Serial interruption during altitude monitor ({e}). Attempting reconnect...")
+                logger.warning(
+                    f"Serial interruption during altitude monitor ({e}). Attempting reconnect..."
+                )
                 try:
                     self.connect()
                 except Exception as conn_err:
@@ -664,7 +705,9 @@ class DroneController:
         )
         raise TimeoutError(f"Takeoff climb timed out after {timeout} seconds.")
 
-    def change_altitude(self, target_alt: float, current_lat: float, current_lon: float):
+    def change_altitude(
+        self, target_alt: float, current_lat: float, current_lon: float
+    ):
         """Commands a vertical ascent or descent while in GUIDED mode."""
         if not self.master:
             raise RuntimeError("Drone is not connected.")
@@ -680,7 +723,14 @@ class DroneController:
             int(current_lat * 1e7),
             int(current_lon * 1e7),
             target_alt,
-            0, 0, 0, 0, 0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
         )
 
     def fly_to(self, lat: float, lon: float, alt: float):
@@ -734,7 +784,9 @@ class DroneController:
                     last_cmd_time = time.time()
 
                 msg = self.master.recv_match(
-                    type=["GLOBAL_POSITION_INT", "STATUSTEXT", "HEARTBEAT"], blocking=True, timeout=1.0
+                    type=["GLOBAL_POSITION_INT", "STATUSTEXT", "HEARTBEAT"],
+                    blocking=True,
+                    timeout=1.0,
                 )
                 if not msg:
                     continue
@@ -751,7 +803,9 @@ class DroneController:
                     guided_id = mode_map.get("GUIDED") if mode_map else None
                     current_mode = getattr(msg, "custom_mode", None)
                     if guided_id is not None and current_mode != guided_id:
-                        raise RuntimeError(f"Flight mode changed unexpectedly away from GUIDED to custom_mode ID {current_mode}")
+                        raise RuntimeError(
+                            f"Flight mode changed unexpectedly away from GUIDED to custom_mode ID {current_mode}"
+                        )
                     continue
 
                 current_lat = msg.lat / 1e7
@@ -768,7 +822,9 @@ class DroneController:
                     return dist
 
             except (serial.SerialException, AttributeError, OSError) as e:
-                logger.warning(f"Serial interruption during navigation monitor ({e}). Attempting reconnect...")
+                logger.warning(
+                    f"Serial interruption during navigation monitor ({e}). Attempting reconnect..."
+                )
                 try:
                     self.connect()
                 except Exception as conn_err:
@@ -791,18 +847,22 @@ class DroneController:
         rate = settings.orbit_rate_dps
         duration = settings.orbit_duration_seconds
 
-        logger.info(f"Initiating orbit: {radius}m radius for {duration}s at {orbit_speed} m/s...")
+        logger.info(
+            f"Initiating orbit: {radius}m radius for {duration}s at {orbit_speed} m/s..."
+        )
 
-        
         # 1. Set the circle radius (ArduPilot expects centimeters)
         # self.set_parameter("CIRCLE_RADIUS", radius * 100.0)
-        modern_success = self.set_parameter("CIRCLE_RADIUS_M", float(radius), timeout=2.0)
-        
+        modern_success = self.set_parameter(
+            "CIRCLE_RADIUS_M", float(radius), timeout=2.0
+        )
+
         if not modern_success:
-            logger.info("Modern CIRCLE_RADIUS_M not found. Falling back to legacy CIRCLE_RADIUS (cm)...")
+            logger.info(
+                "Modern CIRCLE_RADIUS_M not found. Falling back to legacy CIRCLE_RADIUS (cm)..."
+            )
             # Fall back to the legacy parameter (centimeters)
             self.set_parameter("CIRCLE_RADIUS", radius * 100.0, timeout=2.0)
-
 
         self.set_parameter("CIRCLE_RATE", rate)
 
@@ -814,17 +874,17 @@ class DroneController:
         if not mode_accepted:
             self.set_rc_override(channel=3, pwm=65535)
             raise RuntimeError("Failed to enter CIRCLE mode. Orbit aborted.")
-        
 
         # 3. Wait loop with continuous telemetry & heartbeat polling
-        logger.info(f"Successfully entered CIRCLE mode. Orbiting for {duration} seconds...")
+        logger.info(
+            f"Successfully entered CIRCLE mode. Orbiting for {duration} seconds..."
+        )
         start_time = time.time()
 
         try:
             while time.time() - start_time < duration and not self._is_closing:
                 try:
                     self.set_rc_override(channel=3, pwm=1500)
-
 
                     msg = self.master.recv_match(
                         type=["STATUSTEXT", "HEARTBEAT"], blocking=True, timeout=1.0
@@ -838,12 +898,16 @@ class DroneController:
                             logger.info(f"FC StatusText: {text}")
 
                         elif msg_type == "HEARTBEAT":
-                            mode_map = self.master.mode_mapping() if self.master else None
+                            mode_map = (
+                                self.master.mode_mapping() if self.master else None
+                            )
                             circle_id = mode_map.get("CIRCLE") if mode_map else None
                             current_mode = getattr(msg, "custom_mode", None)
 
                             if circle_id is not None and current_mode != circle_id:
-                                raise RuntimeError(f"Flight mode changed unexpectedly away from CIRCLE to custom_mode ID {current_mode}")
+                                raise RuntimeError(
+                                    f"Flight mode changed unexpectedly away from CIRCLE to custom_mode ID {current_mode}"
+                                )
 
                 except (serial.SerialException, AttributeError, OSError) as e:
                     logger.warning(f"Serial interruption during orbit ({e})")
@@ -862,4 +926,3 @@ class DroneController:
         """Commands LAND flight mode for emergency landing."""
         logger.info("Commanding Emergency LAND mode...")
         self.set_mode("LAND")
-

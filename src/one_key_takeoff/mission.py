@@ -4,7 +4,7 @@ from geopy.distance import geodesic
 
 from .config import settings
 from .logger import get_logger
-from .notifier import NotificationService, default_notifier, MissionReporter
+from .notifier import MissionReporter, NotificationService, default_notifier
 from .telemetry import DroneController
 
 logger = get_logger()
@@ -17,7 +17,6 @@ async def execute_mission(
     target_lon: float,
     notifier: NotificationService = default_notifier,
 ):
-
     """Executes closed-loop mission sequence using telemetry verification."""
     reporter = MissionReporter(chat_id, notifier)
 
@@ -38,11 +37,18 @@ async def execute_mission(
             distance = geodesic(initial_pos, target_pos).meters
 
             if distance > settings.max_geofence_meters:
-                logger.warning (f"❌ Target is {distance:.1f}m away. " f"Exceeds max geofence of {settings.max_geofence_meters:.0f}m.")
-                await reporter.notify_geofence_violation(distance, settings.max_geofence_meters)
+                logger.warning(
+                    f"❌ Target is {distance:.1f}m away. "
+                    f"Exceeds max geofence of {settings.max_geofence_meters:.0f}m."
+                )
+                await reporter.notify_geofence_violation(
+                    distance, settings.max_geofence_meters
+                )
                 return
 
-            logger.info(f"Starting mission for {chat_id}. Target: ({target_lat}, {target_lon}), Distance: {distance:.1f}m")
+            logger.info(
+                f"Starting mission for {chat_id}. Target: ({target_lat}, {target_lon}), Distance: {distance:.1f}m"
+            )
             await reporter.notify_accepted(distance)
 
             # 2. Takeoff
@@ -61,7 +67,9 @@ async def execute_mission(
             # 3. Navigate to Target
             logger.info(f"Flying to target ({target_lat}, {target_lon})...")
             nav_timeout = max(60.0, (distance / 5.0) + 60.0)
-            logger.info(f"Monitoring navigation to target (Timeout: {nav_timeout:.1f}s for {distance:.1f}m)...")
+            logger.info(
+                f"Monitoring navigation to target (Timeout: {nav_timeout:.1f}s for {distance:.1f}m)..."
+            )
 
             await asyncio.to_thread(drone.fly_to, target_lat, target_lon, takeoff_alt)
 
@@ -122,4 +130,3 @@ async def execute_mission(
         finally:
             if drone:
                 await asyncio.to_thread(drone.close)
-

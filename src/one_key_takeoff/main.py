@@ -1,16 +1,18 @@
+import re
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI
-import re
+
 from .config import settings
+from .location import extract_url_from_text, resolve_maps_url
 from .logger import get_logger
 from .mission import execute_mission
-from .notifier import default_notifier, MissionReporter
+from .notifier import MissionReporter, default_notifier
 from .schemas import WebhookPayload
-from .location import extract_url_from_text, resolve_maps_url
 
 logger = get_logger()
+
 
 async def process_url_and_execute(chat_id: str, url: str):
     """Background task orchestrator for URL processing."""
@@ -29,10 +31,11 @@ async def process_url_and_execute(chat_id: str, url: str):
         await reporter.notify_url_error()
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"Starting One Key Takeoff API in {settings.app_env} mode (Host: {settings.host}:{settings.port}).")
+    logger.info(
+        f"Starting One Key Takeoff API in {settings.app_env} mode (Host: {settings.host}:{settings.port})."
+    )
     yield
     logger.info("Shutting down API server.")
 
@@ -57,7 +60,6 @@ async def receive_webhook(
     event_type: str | None = "messages",
 ):
 
-    
     if event_type == "messages" or event_type is None:
         for msg in payload.messages:
             if msg.from_me:
@@ -68,7 +70,9 @@ async def receive_webhook(
 
             if msg.location is not None:
                 lat, lon = msg.location.latitude, msg.location.longitude
-                logger.info(f"Incoming Location Pin from {sender}: lat={lat}, lon={lon}")
+                logger.info(
+                    f"Incoming Location Pin from {sender}: lat={lat}, lon={lon}"
+                )
                 background_tasks.add_task(execute_mission, sender, lat, lon)
 
             elif msg.type == "link_preview" and msg.link_preview is not None:
@@ -88,9 +92,11 @@ async def receive_webhook(
 
                 elif re.match(pattern, body):
                     lat, lon = map(float, body.split(","))
-                    logger.info(f"Incoming Coordinates from {sender}: lat={lat}, lon={lon}")
+                    logger.info(
+                        f"Incoming Coordinates from {sender}: lat={lat}, lon={lon}"
+                    )
                     background_tasks.add_task(execute_mission, sender, lat, lon)
-                
+
                 elif body.lower() == "start":
                     background_tasks.add_task(reporter.notify_welcome)
 
@@ -98,4 +104,6 @@ async def receive_webhook(
 
 
 def start():
-    uvicorn.run("one_key_takeoff.main:app", host=settings.host, port=settings.port, reload=True    )
+    uvicorn.run(
+        "one_key_takeoff.main:app", host=settings.host, port=settings.port, reload=True
+    )

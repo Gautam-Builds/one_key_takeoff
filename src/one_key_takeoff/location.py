@@ -1,6 +1,7 @@
 import re
+
 import httpx
-from typing import Tuple, Optional
+
 from .logger import get_logger
 
 logger = get_logger()
@@ -9,12 +10,14 @@ MAPS_URL_PATTERN = re.compile(
     r"(https?://(?:maps\.app\.goo\.gl|goo\.gl/maps|www\.google\.com/maps|maps\.google\.com)[^\s]+)"
 )
 
-def extract_url_from_text(text: str) -> Optional[str]:
+
+def extract_url_from_text(text: str) -> str | None:
     """Finds a Google Maps URL in a block of text."""
     match = MAPS_URL_PATTERN.search(text)
     return match.group(1) if match else None
 
-async def resolve_maps_url(url: str) -> Optional[Tuple[float, float]]:
+
+async def resolve_maps_url(url: str) -> tuple[float, float] | None:
     """Follows a Maps redirect and extracts lat/lon from the final URL."""
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
